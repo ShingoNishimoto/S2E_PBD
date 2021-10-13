@@ -1,0 +1,27 @@
+# CMake and VS directories
+CMakeBuilds/
+.vs/
+
+# Log files
+data/logs/
+
+# Executables
+*.exe
+*.out
+*.app
+
+# OSX
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Ubuntu/Docker
+build/
+
+# Thumbnails
+._*
+
+# Files that might appear on external disk
+.Spotlight-V100
+.Trashes

@@ -1,2 +1,2 @@
-# S2E_CDGPS
-
+# S2E_PBD
+Precise Baseline Determination
