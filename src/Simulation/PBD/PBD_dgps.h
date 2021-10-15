@@ -1,5 +1,5 @@
-#ifndef __PBD_pod_H__
-#define __PBD_pod_H__
+#ifndef __PBD_dgps_H__
+#define __PBD_dgps_H__
 
 #include "Eigen/Dense" // Eigen
 
@@ -16,11 +16,11 @@
 
 #include "gnss_observed_values.hpp"
 
-class PBD_pod
+class PBD_dgps
 {       
     public:
-        PBD_pod(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_);
-        ~PBD_pod();
+        PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit_, const Orbit& target_orbit_);
+        ~PBD_dgps();
         void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_);
         void OrbitPropagation();
         void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
@@ -37,6 +37,10 @@ class PBD_pod
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
     private:
+        // main satellite
+        Orbit* main_orbit_;
+        // target satellite
+        Orbit* target_orbit_;
         //[x:m, y:m, z:m, s:[m]]
         Eigen::Vector4d estimated_status;
         //[vx[m/s], vy[m/s], vz[m/s]]

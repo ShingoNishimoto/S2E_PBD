@@ -14,6 +14,7 @@ PBD_Sat::~PBD_Sat()
   delete components_;
 }
 
+// Ç±Ç±rel_info_ïKóvÇ»Ç¢ÇÃÇ©ÅH
 void PBD_Sat::Initialize(SimulationConfig* sim_config, const GlobalEnvironment* glo_env, PBD_InterSatComm* pbd_inter_sat_comm, const int sat_id)
 {
   components_ = new PBD_Components(dynamics_, structure_, local_env_, glo_env, rel_info_, pbd_inter_sat_comm, sim_config, &clock_gen_, sat_id);

@@ -3,6 +3,7 @@
 #include "SimulationConfig.h"
 #include "SimulationObject.h"
 #include "../Spacecraft/PBD_Sat.h"
+#include "../GroundStation/PBD_GroundStation.h"
 
 PBD_Case::PBD_Case(string ini_fname) :SimulationCase(ini_fname)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {

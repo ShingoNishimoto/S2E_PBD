@@ -45,6 +45,7 @@ include_directories(${CSPICE_DIR}/include)
 include_directories(${NRLMSISE00_DIR}/src)
 include_directories(${EIGEN_DIR})
 include_directories(${S2E_CORE_DIR}/src/Library/math)
+include_directories(${S2E_CORE_DIR}/src/Library/optics)
 include_directories(${S2E_CORE_DIR}/src/Dynamics)
 include_directories(${S2E_CORE_DIR}/src/Disturbance)
 include_directories(${S2E_CORE_DIR}/src/Interface/InitInput)
@@ -54,6 +55,8 @@ include_directories(${S2E_CORE_DIR}/src/Simulation/MCSim)
 include_directories(${S2E_CORE_DIR}/src/Simulation/Spacecraft)
 include_directories(${S2E_CORE_DIR}/src/Simulation/Spacecraft/Structure)
 include_directories(${S2E_CORE_DIR}/src/Simulation/GroundStation)
+include_directories(${S2E_CORE_DIR}/src/Simulation/InterSatComm)
+include_directories(${S2E_CORE_DIR}/src/Simulation/InterSatComm/Abstract)
 include_directories(${S2E_CORE_DIR}/src/Simulation/Case)
 include_directories(${S2E_CORE_DIR}/src/Disturbance)
 include_directories(${S2E_CORE_DIR}/src/Environment/GLOBAL)
@@ -92,14 +95,9 @@ add_subdirectory(${S2E_CORE_DIR}/src/Simulation S2E_CORE/Simulation)
 
 set(SOURCE_FILES
   src/S2E_PBD.cpp
-  src/Component/CDH/OBC_Sat0.cpp
-  src/Component/CDH/OBC_Sat1.cpp
-  src/Component/RFSystem/RFSystemReceiver.cpp
-  src/Component/RFSystem/RFSystemTransmitter.cpp
-  src/Interface/InitInput/InitComponent/InitRFSystemReceiver.cpp
-  src/Interface/InitInput/InitComponent/InitRFSystemTransmitter.cpp
-  src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
   src/Simulation/Case/PBD_Case.cpp
+  src/Simulation/Spacecraft/PBD_Sat.cpp
+  src/Simulation/Spacecraft/PBD_Components.cpp
   src/Simulation/GroundStation/PBD_GroundStation.cpp
   src/Simulation/GroundStation/PBD_GSComponents.cpp
   src/Simulation/InterSatComm/PBD_InterSatComm.cpp
@@ -107,11 +105,16 @@ set(SOURCE_FILES
   src/Simulation/PBD/PBD_pod.cpp
   src/Simulation/PBD/gnss_observed_values.cpp
   src/Simulation/PBD/PBD_const.cpp
-  src/Simulation/Spacecraft/PBD_Sat.cpp
-  src/Simulation/Spacecraft/PBD_Components.cpp
+  src/Component/CDH/OBC_Sat0.cpp
+  src/Component/CDH/OBC_Sat1.cpp
+  src/Component/RFSystem/RFSystemReceiver.cpp
+  src/Component/RFSystem/RFSystemTransmitter.cpp
+  src/Interface/InitInput/InitComponent/InitRFSystemReceiver.cpp
+  src/Interface/InitInput/InitComponent/InitRFSystemTransmitter.cpp
+  src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
 )
 # Create executable file
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} "src/Component/RFSystem/RFSystemReceiver.cpp" "src/Component/RFSystem/RFSystemReceiver.h" "src/Component/RFSystem/RFSystemTransmitter.cpp" "src/Component/RFSystem/RFSystemTransmitter.h")
+add_executable(${PROJECT_NAME} ${SOURCE_FILES} ${SOURCE_FILES})
 # Compile option
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PUBLIC "/W4")
@@ -160,10 +163,10 @@ endif()
 
 ## Linking libraries
 set(S2E_LIBRARIES
-  IGRF WRAPPER_NRLMSISE00 INIH MATH SGP4 UTIL 
+  IGRF WRAPPER_NRLMSISE00 INIH MATH SGP4 UTIL OPTICS RELATIVE_ORBIT_MODELS
 )
 # Initialize link
-target_link_libraries(COMPONENT INTERFACE INI_IN DYNAMICS GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT SC_IO ${S2E_LIBRARIES})
+target_link_libraries(COMPONENT INTERFACE INI_IN DYNAMICS GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT SC_IO RELATIVE_INFO ${S2E_LIBRARIES})
 target_link_libraries(DYNAMICS INTERFACE INI_IN GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT SIMULATION ${S2E_LIBRARIES})
 target_link_libraries(DISTURBANCE INTERFACE INI_IN DYNAMICS GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT ${S2E_LIBRARIES})
 target_link_libraries(SIMULATION INTERFACE INI_IN DYNAMICS GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT DISTURBANCE ${S2E_LIBRARIES})
@@ -178,6 +181,7 @@ target_link_libraries(${PROJECT_NAME} SIMULATION)
 target_link_libraries(${PROJECT_NAME} GLOBAL_ENVIRONMENT LOCAL_ENVIRONMENT)
 target_link_libraries(${PROJECT_NAME} INI_ACC LOG_OUT SC_IO)
 target_link_libraries(${PROJECT_NAME} COMPONENT)
+target_link_libraries(${PROJECT_NAME} RELATIVE_INFO)
 
 ## HILS
 if (WIN32)

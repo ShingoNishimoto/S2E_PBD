@@ -5,6 +5,8 @@
 #include "../Spacecraft/PBD_Sat.h"
 #include "RelativeInformation.h"
 #include "../InterSatComm/PBD_InterSatComm.h"
+#include "../PBD/PBD_pod.h"
+#include "../GroundStation/PBD_GroundStation.h"
 
 class PBD_Case : public SimulationCase
 {
@@ -23,4 +25,5 @@ private:
   //MCSimExecutor& mc_sim_;
   RelativeInformation* rel_info_;
   PBD_InterSatComm* pbd_inter_sat_comm_;
+  PBD_pod* pbd_;
 };

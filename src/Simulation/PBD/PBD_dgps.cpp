@@ -3,7 +3,7 @@
 #include "PBD_const.h"
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_pod::PBD_pod(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_):mt(42), sat_clock_true(0.0), step_time(sim_time_.GetStepSec()), ofs("result.csv"), num_of_sastellites(gnss_satellites_.GetNumOfSatellites())
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit_, const Orbit& target_orbit_):mt(42), sat_clock_true(0.0), step_time(sim_time_.GetStepSec()), ofs("result.csv"), num_of_sastellites(gnss_satellites_.GetNumOfSatellites())
 {
     //初期化
     estimated_status = Eigen::VectorXd::Zero(4);
@@ -46,9 +46,9 @@ PBD_pod::PBD_pod(const SimTime& sim_time_, const GnssSatellites& gnss_satellites
     ofs_ini_txt << "log step time: " << log_step_time << endl;
 }
 
-PBD_pod::~PBD_pod(){}
+PBD_dgps::~PBD_dgps(){}
 
-void PBD_pod::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_)
+void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_)
 {
     //clock //仮
     std::normal_distribution<> clock_dist(0.0, clock_sigma);
@@ -92,7 +92,7 @@ void PBD_pod::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satell
     return;
 }
 
-void PBD_pod::OrbitPropagation()
+void PBD_dgps::OrbitPropagation()
 {
     //RK4
     Eigen::Vector3d position = estimated_status.topRows(3);
@@ -126,12 +126,12 @@ void PBD_pod::OrbitPropagation()
     M = update_M_matrix(position, velocity);
 }
 
-Eigen::Vector3d PBD_pod::position_differential(const Eigen::Vector3d& velocity) const
+Eigen::Vector3d PBD_dgps::position_differential(const Eigen::Vector3d& velocity) const
 {
     return velocity;
 }
 
-Eigen::Vector3d PBD_pod::velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
+Eigen::Vector3d PBD_dgps::velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
 {
     double r = position.norm();
     double v = velocity.norm();
@@ -154,7 +154,7 @@ Eigen::Vector3d PBD_pod::velocity_differential(const Eigen::Vector3d& position, 
     return all_acceleration;
 }
 
-Eigen::MatrixXd PBD_pod::update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity)
+Eigen::MatrixXd PBD_dgps::update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity)
 {
     int n = estimated_bias.size();
     
@@ -176,7 +176,7 @@ Eigen::MatrixXd PBD_pod::update_M_matrix(const Eigen::Vector3d& position, const 
 	return res;
 }
 
-Eigen::MatrixXd PBD_pod::calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
+Eigen::MatrixXd PBD_dgps::calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
 {
     double r = position.norm();
     //double v = velocity.norm();
@@ -214,7 +214,7 @@ Eigen::MatrixXd PBD_pod::calculate_A_matrix(const Eigen::Vector3d& position, con
     return A;
 }
 
-Eigen::MatrixXd PBD_pod::calculate_Q_matrix(const int n)
+Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n)
 {
     Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(n, n);
     //for(int i = 0;i < 3;++i) Q(i, i) = pow(0.1*pseudo_sigma, 2.0);
@@ -225,7 +225,7 @@ Eigen::MatrixXd PBD_pod::calculate_Q_matrix(const int n)
     return Q;
 }
 
-void PBD_pod::KalmanFilter(const GnssObservedValues& gnss_observed_values, const GnssObservedValues& gnss_true)
+void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_values, const GnssObservedValues& gnss_true)
 {
     int n = gnss_observed_values.can_see_satellites_sat_id.size();
     if(n != estimated_bias.size()){
@@ -349,7 +349,7 @@ void PBD_pod::KalmanFilter(const GnssObservedValues& gnss_observed_values, const
     return;
 }
 
-void PBD_pod::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
+void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
 {
     //推定値の計算
     int num_of_gnss_satellites = gnss_satellites_.GetNumOfSatellites();
@@ -425,7 +425,7 @@ void PBD_pod::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_,
     return;
 }
 
-void PBD_pod::ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
+void PBD_dgps::ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
 {
     int ind = 0;
     for(int i = 0;i < num_of_sastellites;++i){
@@ -468,7 +468,7 @@ void PBD_pod::ProcessGnssObservation(GnssObservedValues& gnss_observed_values, G
     return;
 }
 
-void PBD_pod::resize_Matrix(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
+void PBD_dgps::resize_Matrix(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
 {
     //観測する衛星同じだったら飛ばしていい
     if(check_vector_equal(pre_observed_sat_id, now_observed_sat_id)){
@@ -574,14 +574,14 @@ void PBD_pod::resize_Matrix(GnssObservedValues& gnss_observed_values, GnssObserv
     return;
 }
 
-bool PBD_pod::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
+bool PBD_dgps::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
 {
     double angle_rad = angle(satellite_position, gnss_position - satellite_position);
     if(angle_rad < M_PI/2.0 - mask_angle) return true;
     else return false;
 }
 
-double PBD_pod::pseudo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock) const
+double PBD_dgps::pseudo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock) const
 {
     double res = 0.0;
     for(int i = 0;i < 3;++i){
@@ -593,7 +593,7 @@ double PBD_pod::pseudo_range_calculator(const Eigen::Vector4d& sat_status, libra
     return res;
 }
 
-double PBD_pod::geo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const
+double PBD_dgps::geo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const
 {
     double res = 0.0;
     for(int i = 0;i < 3;++i){
@@ -604,7 +604,7 @@ double PBD_pod::geo_range_calculator(const Eigen::Vector4d& sat_status, libra::V
     return res;
 }
 
-double PBD_pod::carrier_phase_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda_narrow) const
+double PBD_dgps::carrier_phase_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda_narrow) const
 {
     double res = 0.0;
     for(int i = 0;i < 3;++i){
@@ -617,7 +617,7 @@ double PBD_pod::carrier_phase_calculator(const Eigen::Vector4d& sat_status, libr
     return res;
 }
 
-template <typename T> bool PBD_pod::check_vector_equal(const vector<T>& a, const vector<T>& b)
+template <typename T> bool PBD_dgps::check_vector_equal(const vector<T>& a, const vector<T>& b)
 {
     if(a.size() != b.size()) return false;
     for(int i = 0;i < a.size();++i){
