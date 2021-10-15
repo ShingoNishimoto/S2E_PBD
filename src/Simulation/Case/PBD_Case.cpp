@@ -4,7 +4,7 @@
 #include "SimulationObject.h"
 #include "../Spacecraft/PBD_Sat.h"
 
-PBD_Case::PBD_Case(string ini_fname):SimulationCase(ini_fname)
+PBD_Case::PBD_Case(string ini_fname) :SimulationCase(ini_fname)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
   rel_info_ = new RelativeInformation();
   pbd_inter_sat_comm_ = new PBD_InterSatComm(&sim_config_);
@@ -103,13 +103,21 @@ void PBD_Case::Main()
 string PBD_Case::GetLogHeader() const
 {
   string str_tmp = "";
-
+  str_tmp += WriteScalar("time", "s");
+  for (auto& spacecraft : spacecrafts_)
+  {
+    str_tmp += WriteVector("Sat" + to_string(spacecraft->GetSatID()) + "_Omega", "b", "rad/s", 3);
+  }
   return str_tmp;
 }
 
 string PBD_Case::GetLogValue() const
 {
   string str_tmp = "";
-
+  str_tmp += WriteScalar(glo_env_->GetSimTime().GetElapsedSec());
+  for (auto& spacecraft : spacecrafts_)
+  {
+    str_tmp += WriteVector(spacecraft->GetDynamics().GetAttitude().GetOmega_b(), 3);
+  }
   return str_tmp;
 }

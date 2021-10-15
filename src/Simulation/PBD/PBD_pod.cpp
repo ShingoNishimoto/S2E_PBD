@@ -92,6 +92,7 @@ void PBD_pod::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satell
     return;
 }
 
+// これはS2Eの方を使わないのはなぜ？
 void PBD_pod::OrbitPropagation()
 {
     //RK4
@@ -147,7 +148,7 @@ Eigen::Vector3d PBD_pod::velocity_differential(const Eigen::Vector3d& position, 
     all_acceleration(1) *= ac_norm - tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0));
     all_acceleration(2) *= ac_norm - tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0));
 
-    //all_acceleration -= Cd*v*velocity; //-Cd*V^2*(Vi/V) 大気抵抗
+    all_acceleration -= Cd*v*velocity; //-Cd*V^2*(Vi/V) 大気抵抗
 
 	//all_acceleration += acceleration; //残りの摂動要素
 
@@ -357,7 +358,7 @@ void PBD_pod::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_,
 
     now_observed_sat_id.clear(); //クリア
 
-    for(int i = 0;i < num_of_gnss_satellites;++i){
+    for(int i = 0; i < num_of_gnss_satellites; ++i){
         //if(i == 7 || i == 23 || i == 31) continue;
         if(!gnss_satellites_.GetWhetherValid(i)) continue;
         libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(i);
@@ -375,7 +376,7 @@ void PBD_pod::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_,
         auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(sat_id, sat_position_i, sat_clock_true, L2_frequency);
 
         double ionfree_range = (pow(L1_frequency/L2_frequency, 2.0)*l1_pseudo_range - l2_pseudo_range)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
-        //double ionfree_phase = (pow(L1_frequency/L2_frequency, 2.0)*L1_lambda*l1_carrier_phase - L2_lambda*l2_carrier_phase)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
+        double ionfree_phase = (pow(L1_frequency/L2_frequency, 2.0)*L1_lambda*(l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda*(l2_carrier_phase.first + l2_carrier_phase.second))/(pow(L1_frequency/L2_frequency, 2.0) - 1);
 
         gnss_true.can_see_satellites_sat_id.push_back(sat_id);
         gnss_true.gnss_satellites_position.push_back(gnss_position);
@@ -386,7 +387,7 @@ void PBD_pod::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_,
         gnss_true.L2_carrier_phase.push_back(l2_carrier_phase);
 
         gnss_true.ionfree_pseudo_range.push_back(ionfree_range);
-        //gnss_true.ionfree_carrier_phase.push_back(ionfree_phase);
+        gnss_true.ionfree_carrier_phase.push_back(ionfree_phase);
 
         //観測誤差を混ぜる
         std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);

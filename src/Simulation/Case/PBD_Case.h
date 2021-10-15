@@ -9,9 +9,8 @@
 class PBD_Case : public SimulationCase
 {
 public:
-  PBD_Case(string ini_fname);
+  PBD_Case(string ini_fname);// , MCSimExecutor& mc_sim, const string log_path);
   virtual ~PBD_Case();
-  
   void Initialize();
   void Main();
 
@@ -21,6 +20,7 @@ public:
 private:
   void InitializeSpacecrafts();
   std::vector<PBD_Sat*> spacecrafts_;
+  //MCSimExecutor& mc_sim_;
   RelativeInformation* rel_info_;
   PBD_InterSatComm* pbd_inter_sat_comm_;
 };

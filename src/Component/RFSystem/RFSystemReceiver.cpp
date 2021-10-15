@@ -82,7 +82,6 @@ string RFSystemReceiver::GetLogHeader() const
 {
   string str_tmp = "";
   str_tmp += WriteScalar("RF received power", "W");
-  str_tmp += WriteVector("RF received Freqency1", "", "Hz", 2);
   return str_tmp;
 }
 
@@ -90,6 +89,5 @@ string RFSystemReceiver::GetLogValue() const
 {
   string str_tmp = "";
   str_tmp += WriteScalar(received_power_watt_);
-  //str_tmp += WriteVector(counted_acoustic_frequence_hz_);
   return str_tmp;
 }

@@ -33,19 +33,19 @@ void RFSystemTransmitter::MainRoutine(int count)
   ////set frequency shift
   //rf_system_beam_->SetFreqShift(2.0 * acoustic_signal_freq_hz_);
 
-  ////set position of beam waist
-  //Quaternion q_i2b = dynamics_->GetAttitude().GetQuaternion_i2b();
-  //Quaternion q_b2i = q_i2b.conjugate();
-  //Vector<3> pos_beamwaist_i = dynamics_->GetOrbit().GetSatPosition_i() + q_b2i.frame_conv(compo_position_b_);
+  //set position of beam waist
+  Quaternion q_i2b = dynamics_->GetAttitude().GetQuaternion_i2b();
+  Quaternion q_b2i = q_i2b.conjugate();
+  Vector<3> pos_beamwaist_i = dynamics_->GetOrbit().GetSatPosition_i() + q_b2i.frame_conv(compo_position_b_);
   //rf_system_beam_->SetBeamWaistPos_i(pos_beamwaist_i);
 
-  //AddNoise();
+  AddNoise();
 
   ////set beam pointing
   //Vector<3> pointing_vec_c = CalcPointingVector_c();
-  //Quaternion q_c2b = q_b2c_.conjugate();
-  //Vector<3> pointing_vec_b = q_c2b.frame_conv(pointing_vec_c);
-  //Vector<3> pointing_vec_i = q_b2i.frame_conv(pointing_vec_b);
+  /*Quaternion q_c2b = q_b2c_.conjugate();
+  Vector<3> pointing_vec_b = q_c2b.frame_conv(pointing_vec_c);
+  Vector<3> pointing_vec_i = q_b2i.frame_conv(pointing_vec_b);*/
   //rf_system_beam_->SetPointingVector_i(pointing_vec_i); //inertial coordinate system
 
   // Adjust optical params with beam expander

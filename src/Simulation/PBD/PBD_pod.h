@@ -42,7 +42,7 @@ class PBD_pod
         //[vx[m/s], vy[m/s], vz[m/s]]
         Eigen::Vector3d estimated_velocity;
         //[ax[m/s^2], ay[m/s^2], az[m/s^2]]
-        //Eigen::Vector3d estimated_acc;
+        Eigen::Vector3d estimated_acc;
 
         Eigen::VectorXd estimated_bias;
 
