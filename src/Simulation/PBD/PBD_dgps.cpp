@@ -16,9 +16,9 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 
     estimated_differential_status = Eigen::VectorXd::Zero(4);
     libra::Vector<3> position_target = target_orbit_.GetSatPosition_i();
-    for (int i = 0; i < 3; ++i) estimated_differential_status(i) = position_target[i];
-    libra::Vector<3> velocity_target = main_orbit_.GetSatVelocity_i();
-    for (int i = 0; i < 3; ++i) estimated_differential_velocity(i) = velocity_target[i];
+    for (int i = 0; i < 3; ++i) estimated_differential_status(i) = position_target[i] - position_main[i];
+    libra::Vector<3> velocity_target = target_orbit_.GetSatVelocity_i();
+    for (int i = 0; i < 3; ++i) estimated_differential_velocity(i) = velocity_target[i] - velocity_main[i];
     estimated_differential_acc = Eigen::VectorXd::Zero(3);
 
     std::normal_distribution<> position_dist(0.0, 3.0*pseudo_sigma);
@@ -30,7 +30,11 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     for(int i = 0;i < 3;++i) V(i) = pow(3.0*pseudo_sigma, 2.0);
     V(3) = pow(clock_sigma, 2.0);
     for(int i = 4;i < 7;++i) V(i) = pow(0.3*pseudo_sigma, 2.0);
-    //for(int i = 7;i < 10;++i) V(i) = pow(0.03*pseudo_sigma, 2.0);
+    for(int i = 7;i < 10;++i) V(i) = pow(0.03*pseudo_sigma, 2.0);
+    for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) V(i) = pow(3.0 * pseudo_sigma, 2.0);
+    V(num_of_single_status + 3) = pow(clock_sigma, 2.0);
+    for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) V(i) = pow(0.3 * pseudo_sigma, 2.0);
+    for (int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) V(i) = pow(0.03 * pseudo_sigma, 2.0);
 
     M = V.asDiagonal();
 
@@ -105,7 +109,9 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
         for(int i = 0;i < 3;++i) ofs << fixed << setprecision(30) << estimated_velocity(i) << ",";
         for (int i = 0; i < 4; ++i) ofs << fixed << setprecision(30) << estimated_differential_status(i) << ",";
         for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << estimated_differential_velocity(i) << ",";
-        for(int i = 0;i < num_of_status;++i) ofs << fixed << setprecision(30) << M(i, i) << ",";
+        for (int i = 0; i < num_of_single_status; ++i) ofs << fixed << setprecision(30) << M(i, i) << ",";
+        int main_observed_gnss_num = now_observed_gnss_sat_id.at(0).size();
+        for(int i = num_of_single_status + main_observed_gnss_num;i < num_of_status + main_observed_gnss_num; ++i) ofs << fixed << setprecision(30) << M(i, i) << ",";
         // ここは何を残しているのか確認．
         int ans = 0;
         for(int i = 0;i < num_of_gnss_sastellites;++i){
@@ -144,6 +150,7 @@ void PBD_dgps::OrbitPropagation()
     M = update_M_matrix(position_main, velocity_main, acceleration_main, position_target - position_main, estimated_differential_velocity, estimated_differential_acc);
 }
 
+// Orbitの更新を使えるように修正
 vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration)
 {
   Eigen::Vector3d k0 = position_differential(velocity);
@@ -482,6 +489,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
       abort();
     }
     return;
+    // clockの更新で死んでる
 }
 
 void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, const int sat_id, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true)
