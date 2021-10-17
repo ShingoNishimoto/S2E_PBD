@@ -57,7 +57,7 @@ void PBD_Case::InitializeSpacecrafts()
 void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
-
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), (spacecrafts_.at(0)->GetDynamics()).GetOrbit(), (spacecrafts_.at(1)->GetDynamics()).GetOrbit());
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
   rel_info_->LogSetup(*(sim_config_.main_logger_));
@@ -93,6 +93,8 @@ void PBD_Case::Main()
       spacecraft->Update(&(glo_env_->GetSimTime()));
       spacecraft->Clear(); //Zero clear force and torque for dynamics
     }
+    // ‹O“¹‚Ìupdate‚ª‚Å‚«‚Ä‚é‚©‚Ç‚¤‚©Šm”F‚µ‚½•û‚ª‚¢‚¢
+    pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites());
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
     {

@@ -1,7 +1,7 @@
 #ifndef __PBD_dgps_H__
 #define __PBD_dgps_H__
 
-#include "Eigen/Dense" // Eigen
+#include "Dense" // Eigen
 
 #include <vector>
 #define _USE_MATH_DEFINES
@@ -9,24 +9,27 @@
 #include <random>
 #include <fstream>
 #include <iomanip>
+#include <map>
 #include "Vector.hpp"
 #include "SimTime.h"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 
-#include "gnss_observed_values.hpp"
+#include "gnss_observed_values.h"
 
 class PBD_dgps
 {       
     public:
-        PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit_, const Orbit& target_orbit_);
+        PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit);
         ~PBD_dgps();
-        void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& orbit_);
+        void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
         void OrbitPropagation();
-        void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
-        void ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
-        void resize_Matrix(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
-        void KalmanFilter(const GnssObservedValues& gnss_observed_values, const GnssObservedValues& gnss_true);
+        void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, const int sat_id, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
+        void ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id);
+        void resize_Matrix(std::pair<GnssObservedValues, GnssObservedValues> gnss_observed_pair, std::pair<GnssObservedValues, GnssObservedValues> gnss_true_pair);
+        void calculate_phase_bias(GnssObservedValues gnss_observed_values, GnssObservedValues gnss_true, const int sat_id, Eigen::MatrixXd& pre_M, Eigen::VectorXd& bias);
+        //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
+        void KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target);
 
         //仮
         //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
@@ -38,41 +41,66 @@ class PBD_dgps
 
     private:
         // main satellite
-        Orbit* main_orbit_;
+        const Orbit& main_orbit_;
         // target satellite
-        Orbit* target_orbit_;
+        const Orbit& target_orbit_;
         //[x:m, y:m, z:m, s:[m]]
         Eigen::Vector4d estimated_status;
         //[vx[m/s], vy[m/s], vz[m/s]]
         Eigen::Vector3d estimated_velocity;
         //[ax[m/s^2], ay[m/s^2], az[m/s^2]]
-        //Eigen::Vector3d estimated_acc;
+        Eigen::Vector3d estimated_acc;
 
         Eigen::VectorXd estimated_bias;
 
-        vector<bool> pre_observed_vector;
-        vector<bool> now_observed_vector;
-        vector<int> pre_observed_sat_id;
-        vector<int> now_observed_sat_id;
+        std::map<const int, int> main_index_dict;
 
-        vector<double> first_L1_bias;
-        vector<double> first_L2_bias;
-        int num_of_sastellites;
+        // ここもsingleとdoubleで分けて考えれるような枠組みにしたい
+        //[dx:m, dy:m, dz:m, ds:[m]]
+        Eigen::Vector4d estimated_differential_status;
+        //[dvx[m/s], dvy[m/s], dvz[m/s]]
+        Eigen::Vector3d estimated_differential_velocity;
+        //[dax[m/s^2], day[m/s^2], daz[m/s^2]]
+        Eigen::Vector3d estimated_differential_acc;
+        // 辞書が欲しい commonとmainをつなげるために
+        Eigen::VectorXd estimated_target_bias;
+        Eigen::VectorXd estimated_differential_bias;
 
-        const double Cd = 2.928e-14;
+        std::map<const int, int> common_index_dict;
+        
+        //初期化をもっとスマートにできるように考える
+        vector<vector<bool>> pre_observed_vector{ {},{} }; // 名前分かりにくいので変えたい
+        vector<vector<bool>> now_observed_vector{ {},{} };
+        vector<vector<bool>> common_observed_vector{ {},{} };
+        vector<vector<int>> pre_observed_gnss_sat_id{ {},{} };
+        vector<vector<int>> now_observed_gnss_sat_id{ {},{} };
+        vector<vector<int>> common_observed_gnss_sat_id{ {},{} };
+
+        vector<vector<double>> first_L1_bias{ {},{} };
+        vector<vector<double>> first_L2_bias{ {},{} };
+        int num_of_gnss_sastellites;
+
+        const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化内から一定でいいか．
 
         Eigen::MatrixXd M;
 
-        const int num_of_status = 7;
+        const int num_of_single_status = 10; //+3+ns
+        const int num_of_status = 20; //+3　+ns
 
         double step_time;
         double observe_step_time = 10.0;
         double log_step_time = 1.0;
+        vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
         Eigen::Vector3d position_differential(const Eigen::Vector3d& velocity) const;
-        Eigen::Vector3d velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-        Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity);
-        Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+        Eigen::Vector3d velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
+        Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration);
+        // for differential
+        Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration, const Eigen::Vector3d& position_difference, const Eigen::Vector3d& velocity_difference, const Eigen::Vector3d& acceleration_difference);
+        Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
+        // for differential
+        Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration, const Eigen::Vector3d& position_difference, const Eigen::Vector3d& velocity_difference, const Eigen::Vector3d& acceleration_difference) const;
         Eigen::MatrixXd calculate_Q_matrix(const int n);
+        void find_common_observed_gnss(const std::pair<int, int> sat_id_pair);
 
         //clockの真値[m]
         double sat_clock_true;
@@ -86,6 +114,9 @@ class PBD_dgps
         double pseudo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock) const;
         double geo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const;
         double carrier_phase_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda_narrow) const;
+        Eigen::VectorXd calculate_single_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
+        // 一旦singleだけにする
+        //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
 
         template <typename T> bool check_vector_equal(const vector<T>& a, const vector<T>& b);
 };

@@ -102,7 +102,8 @@ set(SOURCE_FILES
   src/Simulation/GroundStation/PBD_GSComponents.cpp
   src/Simulation/InterSatComm/PBD_InterSatComm.cpp
   src/Simulation/InterSatComm/RFSystem/RFSystemBeam.cpp
-  src/Simulation/PBD/PBD_pod.cpp
+  #src/Simulation/PBD/PBD_pod.cpp
+  src/Simulation/PBD/PBD_dgps.cpp
   src/Simulation/PBD/gnss_observed_values.cpp
   src/Simulation/PBD/PBD_const.cpp
   src/Component/CDH/OBC_Sat0.cpp
