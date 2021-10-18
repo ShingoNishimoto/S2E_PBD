@@ -32,7 +32,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     for(int i = 4;i < 7;++i) V(i) = pow(0.3*pseudo_sigma, 2.0);
     for(int i = 7;i < 10;++i) V(i) = pow(0.03*pseudo_sigma, 2.0);
     for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) V(i) = pow(3.0 * pseudo_sigma, 2.0);
-    V(num_of_single_status + 3) = pow(clock_sigma, 2.0);
+    V(num_of_single_status + 3) = pow(0.1*clock_sigma, 2.0);
     for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) V(i) = pow(0.3 * pseudo_sigma, 2.0);
     for (int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) V(i) = pow(0.03 * pseudo_sigma, 2.0);
 
@@ -252,7 +252,7 @@ Eigen::MatrixXd PBD_dgps::update_M_matrix(const Eigen::Vector3d& position, const
   Q.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_single_status, num_of_single_status) = QQ.bottomRightCorner(num_of_single_status, num_of_single_status);
   Eigen::MatrixXd Gamma = pow(step_time, 2.0) * Q;
   Gamma(3, 3) = pow(clock_sigma, 2.0);
-  Gamma(num_of_single_status + n_main + 3, num_of_single_status + n_main + 3) = pow(clock_sigma, 2.0);
+  Gamma(num_of_single_status + n_main + 3, num_of_single_status + n_main + 3) = pow(0.1*clock_sigma, 2.0);
 
   Eigen::MatrixXd res = Phi * M * Phi.transpose() + Gamma;
 
@@ -328,12 +328,12 @@ Eigen::MatrixXd PBD_dgps::calculate_A_matrix(const Eigen::Vector3d& position, co
   A(5, 4) = -Cd * vx * vy / v;    A(5, 5) = -Cd * (vy * vy / v + v);    A(5, 6) = -Cd * vy * vz / v;
   A(6, 4) = -Cd * vx * vz / v;    A(6, 5) = -Cd * vy * vz / v;    A(6, 6) = -Cd * (vz * vz / v + v);
 
-  // これを入れるなら1/2t^2も入れたい<-非線形こうなので無理？
   A(4, 7) = 1.0;	A(5, 8) = 1.0;	A(6, 9) = 1.0;
+  A(0, 7) = step_time/2.0;	A(1, 8) = step_time/2.0;	A(2, 9) = step_time/2.0;
 
   //A(4,10) = -v*vx;    A(5,10) = -v*vy;    A(6,10) = -v*vz;
 
-  // ここは自信がない，後で見直した方がいい
+  // ここは自信がない，後で見直した方がいい<-PRISMAと同じ手法のはず
   A(num_of_single_status, num_of_single_status + 4)     = 1.0;
   A(num_of_single_status + 1, num_of_single_status + 5) = 1.0;
   A(num_of_single_status + 2, num_of_single_status + 6) = 1.0;
@@ -357,17 +357,16 @@ Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n)
     Q(3, 3) = pow(clock_sigma, 2.0);
     // 何で？
     for(int i = 4;i < 7;++i) Q(i, i) = pow(1e-2*pseudo_sigma, 2.0);
-    //for(int i = 7;i < 10;++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
+    for(int i = 7;i < 10;++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
 
     for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(0.1 * pseudo_sigma, 2.0);
-    Q(num_of_single_status + 3, num_of_single_status + 3) = pow(clock_sigma, 2.0);
+    Q(num_of_single_status + 3, num_of_single_status + 3) = pow(0.1*clock_sigma, 2.0);
     for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(1e-2 * pseudo_sigma, 2.0);
-    //for(int i = 7;i < 10;++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
+    for(int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
 
     return Q;
 }
 
-// ここがバグってる
 void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target)
 {
     int n = gnss_observed_main.can_see_satellites_sat_id.size();
@@ -392,11 +391,13 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
         double carrier_phase = gnss_observed_main.ionfree_carrier_phase.at(i);
         // 共通衛星を探す．
         unsigned int gnss_sat_id = gnss_observed_main.can_see_satellites_sat_id.at(i);
+        double gnss_clock_target = 0.0;
         double carrier_phase_target = 0.0;
         for (int j = 0; j < gnss_observed_target.can_see_satellites_sat_id.size(); ++j)
         {
           if (gnss_sat_id == gnss_observed_target.can_see_satellites_sat_id.at(j))
           {
+            gnss_clock_target = gnss_observed_target.gnss_clock.at(j);
             carrier_phase_target = gnss_observed_target.ionfree_carrier_phase.at(j);
             break;
           }
@@ -407,7 +408,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
         double pseudo_range_calc = pseudo_range_calculator(estimated_status, gnss_position, gnss_clock);
         // この計算でいいのか？
         double phase_range_calc = pseudo_range_calc + estimated_bias(i);
-        double pseudo_range_target_calc = pseudo_range_calculator(estimated_differential_status + estimated_status, gnss_position, gnss_clock);
+        double pseudo_range_target_calc = pseudo_range_calculator(estimated_differential_status + estimated_status, gnss_position, gnss_clock_target);
         double phase_range_target_calc = pseudo_range_target_calc + estimated_differential_bias(common_index_dict.at(gnss_sat_id)) + estimated_bias(i);
 
         z(i) = pseudo_range;
@@ -423,7 +424,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
             if (sdcp != -carrier_phase)
             {
               // やばすぎるから修正
-              z(2 * n + k) = sdcp - estimated_differential_bias(k);
+              z(2 * n + k) = sdcp;
               h_x(2 * n + k) = phase_range_target_calc - phase_range_calc;
               H(2 * n + k, j + num_of_single_status + n) = (estimated_status(j) - gnss_position[j]) / geo_range_calc;
             }
@@ -441,9 +442,9 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     for (int i = 0; i < n_common; ++i)
     {
       //clock
-      H(2 * n + i, 3) = 1.0;
+      H(2 * n + i, num_of_single_status + n + 3) = 1.0;
       //N
-      H(2 * n + i, i + num_of_single_status + n) = 1.0;
+      H(2 * n + i, i + num_of_status + n) = 1.0;
     }
 
     double ionfree_pseudo_sigma = sqrt(pow(L1_frequency/L2_frequency, 4.0) + 1.0)*pseudo_sigma/(pow(L1_frequency/L2_frequency, 2.0) - 1.0);
@@ -454,9 +455,10 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     R_V.bottomRows(n + n_common) = R_V_phase;
     Eigen::MatrixXd R = R_V.asDiagonal();
 
-    //カルマンゲイン
+    //カルマンゲイン<-資料によって書いてることが違うからしっかり考える
     Eigen::MatrixXd tmp = R + H*M*H.transpose();
-    Eigen::MatrixXd K = M*H.transpose()*tmp.inverse();
+    Eigen::MatrixXd K = M * H.transpose() * tmp.inverse();
+    //Eigen::MatrixXd K = M*H.transpose()*R.inverse();
 
     Eigen::VectorXd x_predict = Eigen::VectorXd(num_of_status + n + n_common);
     x_predict.topRows(4) = estimated_status;
@@ -469,6 +471,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     x_predict.block(num_of_single_status + n + 7, 0, 3, 1) = estimated_differential_acc;
     x_predict.bottomRows(n_common) = estimated_differential_bias;
     
+    // ここの更新を一緒にしているのが間違いなのでは？update後の量が差分になっていない
     Eigen::VectorXd x_update = x_predict + K*(z - h_x);
 
     //更新
@@ -481,7 +484,9 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     estimated_differential_velocity = x_update.block(num_of_single_status + n + 4, 0, 3, 1);
     estimated_differential_acc = x_update.block(num_of_single_status + n + 7, 0, 3, 1);
     estimated_differential_bias = x_update.bottomRows(n_common);
-    M = (Eigen::MatrixXd::Identity(num_of_status + n + n_common , num_of_status + n + n_common) - K*H)*M;
+
+    //Eigen::MatrixXd tmp2 = M * H.transpose() * tmp.inverse() * H * M;
+    M = M -K*H*M;
     
     if (!std::isfinite(estimated_status(0)))
     {
@@ -523,7 +528,7 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
         auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, sat_clock_true, L2_frequency);
 
         double ionfree_range = (pow(L1_frequency/L2_frequency, 2.0)*l1_pseudo_range - l2_pseudo_range)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
-        //double ionfree_phase = (pow(L1_frequency/L2_frequency, 2.0)*L1_lambda*l1_carrier_phase - L2_lambda*l2_carrier_phase)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
+        double ionfree_phase = (pow(L1_frequency/L2_frequency, 2.0)*L1_lambda*(l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda*(l2_carrier_phase.first + l2_carrier_phase.second))/(pow(L1_frequency/L2_frequency, 2.0) - 1);
 
         gnss_true.can_see_satellites_sat_id.push_back(gnss_sat_id);
         gnss_true.gnss_satellites_position.push_back(gnss_position);
@@ -534,7 +539,7 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
         gnss_true.L2_carrier_phase.push_back(l2_carrier_phase);
 
         gnss_true.ionfree_pseudo_range.push_back(ionfree_range);
-        //gnss_true.ionfree_carrier_phase.push_back(ionfree_phase);
+        gnss_true.ionfree_carrier_phase.push_back(ionfree_phase);
 
         //観測誤差を混ぜる
         std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
@@ -551,7 +556,7 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
         l2_carrier_phase.first += carrier_phase_noise(mt)/L2_lambda; //carrier_phase_noise(mt)/L2_lambda;
 
         ionfree_range = (pow(L1_frequency/L2_frequency, 2.0)*l1_pseudo_range - l2_pseudo_range)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
-        //ionfree_phase = L2_lambda*(L1_frequency/L2_frequency*l1_carrier_phase - l2_carrier_phase)/(pow(L1_frequency/L2_frequency, 2.0) - 1);
+        ionfree_phase = L2_lambda*(L1_frequency/L2_frequency* (l1_carrier_phase.first + l1_carrier_phase.second) - (l2_carrier_phase.first + l2_carrier_phase.second))/(pow(L1_frequency/L2_frequency, 2.0) - 1);
 
         gnss_observed_values.can_see_satellites_sat_id.push_back(gnss_sat_id);
         gnss_observed_values.gnss_satellites_position.push_back(gnss_position);
@@ -769,7 +774,6 @@ void PBD_dgps::resize_Matrix(std::pair<GnssObservedValues, GnssObservedValues> g
     M.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_single_status, num_of_single_status) = pre_M.block(num_of_single_status + n_main_pre, num_of_single_status + n_main_pre, num_of_single_status, num_of_single_status);
 
     calculate_phase_bias(gnss_observed_pair.first, gnss_true_pair.first, 0, pre_M, estimated_bias);
-    //これやとestimated_differential_biasが共通衛星以外にも出そう．　
     calculate_phase_bias(gnss_observed_pair.second, gnss_true_pair.second, 1, pre_M, estimated_target_bias);
     
     // differential_biasを求める．
@@ -847,6 +851,7 @@ double PBD_dgps::carrier_phase_calculator(const Eigen::Vector4d& sat_status, lib
     return res;
 }
 
+//使ってない，修正してこの形に持っていく
 Eigen::VectorXd PBD_dgps::calculate_single_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const
 {
   return main_observation - target_observation;
