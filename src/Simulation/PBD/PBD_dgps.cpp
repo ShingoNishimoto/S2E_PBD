@@ -3,7 +3,7 @@
 #include "PBD_const.h"
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit):mt(42), sat_clock_true(0.0), step_time(sim_time_.GetStepSec()), ofs("result.csv"), num_of_gnss_sastellites(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit)
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit):mt(42), sat_clock_true(0.0), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_sastellites(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit)
 {
   // ここをmainとtargetに関してやっていく
     //初期化
@@ -32,7 +32,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     for(int i = 4;i < 7;++i) V(i) = pow(0.3*pseudo_sigma, 2.0);
     for(int i = 7;i < 10;++i) V(i) = pow(0.03*pseudo_sigma, 2.0);
     for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) V(i) = pow(3.0 * pseudo_sigma, 2.0);
-    V(num_of_single_status + 3) = pow(0.1*clock_sigma, 2.0);
+    V(num_of_single_status + 3) = pow(0.3*clock_sigma, 2.0);
     for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) V(i) = pow(0.3 * pseudo_sigma, 2.0);
     for (int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) V(i) = pow(0.03 * pseudo_sigma, 2.0);
 
@@ -49,7 +49,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     for (int i = 0; i < 2; ++i) first_L1_bias.at(i).assign(num_of_gnss_sastellites, 0.0);
     for (int i = 0; i < 2; ++i) first_L2_bias.at(i).assign(num_of_gnss_sastellites, 0.0);
 
-    ofstream ofs_ini_txt("readme.txt");
+    ofstream ofs_ini_txt("readme_new.txt");
     ofs_ini_txt << "initial position dist: " << 3.0*pseudo_sigma << endl;
     ofs_ini_txt << "initial velocity dist: " << 0.3*pseudo_sigma << endl;
     ofs_ini_txt << "pseudo dist: " << pseudo_sigma << endl;
@@ -252,7 +252,7 @@ Eigen::MatrixXd PBD_dgps::update_M_matrix(const Eigen::Vector3d& position, const
   Q.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_single_status, num_of_single_status) = QQ.bottomRightCorner(num_of_single_status, num_of_single_status);
   Eigen::MatrixXd Gamma = pow(step_time, 2.0) * Q;
   Gamma(3, 3) = pow(clock_sigma, 2.0);
-  Gamma(num_of_single_status + n_main + 3, num_of_single_status + n_main + 3) = pow(0.1*clock_sigma, 2.0);
+  Gamma(num_of_single_status + n_main + 3, num_of_single_status + n_main + 3) = pow(clock_sigma, 2.0);
 
   Eigen::MatrixXd res = Phi * M * Phi.transpose() + Gamma;
 
@@ -343,8 +343,8 @@ Eigen::MatrixXd PBD_dgps::calculate_A_matrix(const Eigen::Vector3d& position, co
   A(num_of_single_status + 6, num_of_single_status + 9) = 1.0;
 
   A(num_of_single_status, num_of_single_status + 7)     = step_time/2.0;
-  A(num_of_single_status + 1, num_of_single_status + 8) = step_time / 2.0;
-  A(num_of_single_status + 2, num_of_single_status + 9) = step_time / 2.0;
+  A(num_of_single_status + 1, num_of_single_status + 8) = step_time/2.0;
+  A(num_of_single_status + 2, num_of_single_status + 9) = step_time/2.0;
 
   return A;
 }
@@ -359,10 +359,10 @@ Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n)
     for(int i = 4;i < 7;++i) Q(i, i) = pow(1e-2*pseudo_sigma, 2.0);
     for(int i = 7;i < 10;++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
 
-    for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(0.1 * pseudo_sigma, 2.0);
-    Q(num_of_single_status + 3, num_of_single_status + 3) = pow(0.1*clock_sigma, 2.0);
-    for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(1e-2 * pseudo_sigma, 2.0);
-    for(int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) Q(i, i) = pow(0.001*pseudo_sigma, 2.0);
+    for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(pseudo_sigma, 2.0);
+    Q(num_of_single_status + 3, num_of_single_status + 3) = pow(clock_sigma, 2.0);
+    for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(1e-1 * pseudo_sigma, 2.0);
+    for(int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) Q(i, i) = pow(0.01*pseudo_sigma, 2.0);
 
     return Q;
 }
@@ -451,8 +451,10 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     double ionfree_carrier_sigma = sqrt(pow(L1_frequency/L2_frequency, 4.0) + 1.0)*carrier_sigma/(pow(L1_frequency/L2_frequency, 2.0) - 1.0);
     
     Eigen::VectorXd R_V = Eigen::VectorXd::Constant(2*n + n_common, pow(ionfree_pseudo_sigma, 2.0));
-    Eigen::VectorXd R_V_phase = Eigen::VectorXd::Constant(n + n_common, pow(ionfree_carrier_sigma, 2.0));
-    R_V.bottomRows(n + n_common) = R_V_phase;
+    Eigen::VectorXd R_V_phase = Eigen::VectorXd::Constant(n, pow(ionfree_carrier_sigma, 2.0));
+    Eigen::VectorXd R_V_phase_difference = Eigen::VectorXd::Constant(n_common, pow(0.1*ionfree_carrier_sigma, 2.0));
+    R_V.block(n, 0, n, 1) = R_V_phase;
+    R_V.bottomRows(n_common) = R_V_phase_difference;
     Eigen::MatrixXd R = R_V.asDiagonal();
 
     //カルマンゲイン<-資料によって書いてることが違うからしっかり考える
@@ -471,6 +473,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
     x_predict.block(num_of_single_status + n + 7, 0, 3, 1) = estimated_differential_acc;
     x_predict.bottomRows(n_common) = estimated_differential_bias;
     
+    //h_x = H * x_predict;
     // ここの更新を一緒にしているのが間違いなのでは？update後の量が差分になっていない
     Eigen::VectorXd x_update = x_predict + K*(z - h_x);
 
@@ -567,7 +570,7 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
         gnss_observed_values.L2_carrier_phase.push_back(l2_carrier_phase);
 
         gnss_observed_values.ionfree_pseudo_range.push_back(ionfree_range);
-        //gnss_observed_values.ionfree_carrier_phase.push_back(ionfree_phase);
+        gnss_observed_values.ionfree_carrier_phase.push_back(ionfree_phase);
     }
 
     if(!gnss_observed_values.check_normal()){
