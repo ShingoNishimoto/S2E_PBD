@@ -361,8 +361,8 @@ Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n)
 
     for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(pseudo_sigma, 2.0);
     Q(num_of_single_status + 3, num_of_single_status + 3) = pow(clock_sigma, 2.0);
-    for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(1e-1 * pseudo_sigma, 2.0);
-    for(int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) Q(i, i) = pow(0.01*pseudo_sigma, 2.0);
+    for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(1e-3 * pseudo_sigma, 2.0);
+    for(int i = num_of_single_status + 7; i < num_of_single_status + 10; ++i) Q(i, i) = pow(0.0001*pseudo_sigma, 2.0);
 
     return Q;
 }
