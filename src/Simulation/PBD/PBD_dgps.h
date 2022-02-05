@@ -24,7 +24,7 @@ class PBD_dgps
         ~PBD_dgps();
         void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
         void OrbitPropagation();
-        void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, const int sat_id, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
+        void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, const int sat_id, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, double sat_clock_true);
         void ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id);
         void resize_Matrix(std::pair<GnssObservedValues, GnssObservedValues> gnss_observed_pair, std::pair<GnssObservedValues, GnssObservedValues> gnss_true_pair);
         void calculate_phase_bias(GnssObservedValues gnss_observed_values, GnssObservedValues gnss_true, const int sat_id, Eigen::MatrixXd& pre_M, Eigen::VectorXd& bias);
@@ -48,7 +48,7 @@ class PBD_dgps
         Eigen::Vector4d estimated_status;
         //[vx[m/s], vy[m/s], vz[m/s]]
         Eigen::Vector3d estimated_velocity;
-        //[ax[m/s^2], ay[m/s^2], az[m/s^2]]
+        //[ax[mm/s^2], ay[mm/s^2], az[mm/s^2]]
         Eigen::Vector3d estimated_acc; // ここの加速度は外乱とかのその他加速度
 
         Eigen::VectorXd estimated_bias;
@@ -56,11 +56,11 @@ class PBD_dgps
         std::map<const int, int> main_index_dict;
 
         // ここもsingleとdoubleで分けて考えれるような枠組みにしたい
-        //[dx:m, dy:m, dz:m, ds:[m]]
+        //[dx[m], dy[m], dz[m], ds[m]]
         Eigen::Vector4d estimated_differential_status;
-        //[dvx[m/s], dvy[m/s], dvz[m/s]]
+        //[dvx[m/s], dvy[m/s], dvz[m/s]] <- mm/sの方がよさそう．
         Eigen::Vector3d estimated_differential_velocity;
-        //[dax[m/s^2], day[m/s^2], daz[m/s^2]]
+        //[dax[mm/s^2], day[mm/s^2], daz[mm/s^2]]
         Eigen::Vector3d estimated_differential_acc;
         // 辞書が欲しい commonとmainをつなげるために
         Eigen::VectorXd estimated_target_bias;
@@ -80,7 +80,7 @@ class PBD_dgps
         vector<vector<double>> first_L2_bias{ {},{} };
         int num_of_gnss_sastellites;
 
-        const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化内から一定でいいか．
+        const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一定でいいか．
 
         Eigen::MatrixXd M;
 
@@ -93,17 +93,19 @@ class PBD_dgps
         vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
         Eigen::Vector3d position_differential(const Eigen::Vector3d& velocity) const;
         Eigen::Vector3d velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
-        Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration);
         // for differential
         Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration, const Eigen::Vector3d& position_difference, const Eigen::Vector3d& velocity_difference, const Eigen::Vector3d& acceleration_difference);
         Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
         // for differential
         Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration, const Eigen::Vector3d& position_difference, const Eigen::Vector3d& velocity_difference, const Eigen::Vector3d& acceleration_difference) const;
-        Eigen::MatrixXd calculate_Q_matrix(const int n);
+        Eigen::MatrixXd calculate_Q_matrix(const int n_main, const int n_common);
+        Eigen::MatrixXd calculate_Phi_a(const double dt);
         void find_common_observed_gnss(const std::pair<int, int> sat_id_pair);
 
+
         //clockの真値[m]
-        double sat_clock_true;
+        double sat_main_clock_true;
+        double sat_target_clock_true;
 
         //マスク角 [rad]
         const double mask_angle = 10.0/180.0*M_PI;
@@ -111,9 +113,9 @@ class PBD_dgps
         std::random_device seed_gen;
         std::mt19937 mt;
 
-        double pseudo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock) const;
-        double geo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const;
-        double carrier_phase_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda_narrow) const;
+        double calculate_pseudo_range(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock) const;
+        double calculate_carrier_phase(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda) const;
+        double calculate_geometric_range(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const;
         Eigen::VectorXd calculate_single_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
         // 一旦singleだけにする
         //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
