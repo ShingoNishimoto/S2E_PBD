@@ -20,6 +20,19 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     for (int i = 0; i < 3; ++i) estimated_differential_velocity(i) = velocity_target[i] - velocity_main[i];
     estimated_differential_acc = Eigen::VectorXd::Zero(3);
 
+    // method化した方がいいかも
+    const int state_dimension = num_of_status + 2 * num_of_gnss_channel - 1;
+    const int single_dimension = num_of_single_status + num_of_gnss_channel;
+    y_est = Eigen::VectorXd::Zero(state_dimension);
+    y_est.block(0, 0, 4, 1) = estimated_status;
+    y_est.block(4, 0, 3, 1) = estimated_velocity;
+    y_est.block(7, 0, 3, 1) = estimated_acc;
+    y_est.block(10, 0, num_of_gnss_channel, 1) = estimated_bias;
+    y_est.block(single_dimension, 0, 4, 1) = estimated_differential_status;
+    y_est.block(single_dimension + 4, 0, 3, 1) = estimated_differential_velocity;
+    y_est.block(single_dimension + 7, 0, 3, 1) = estimated_differential_acc;
+    y_est.block(single_dimension + 10, 0, num_of_gnss_channel, 1) = estimated_differential_bias;
+
     // 初期分散
     std::normal_distribution<> position_dist(0.0,sigma_r_ini);
     std::normal_distribution<> clock_dist(0.0, sigma_cdt_ini);
@@ -163,10 +176,23 @@ void PBD_dgps::OrbitPropagation()
     for (int i = 0; i < 3; ++i) estimated_differential_status(i) = position_target(i) - position_main(i);
     estimated_differential_velocity = velocity_target - velocity_main;
 
+    // acceleration ここでは q = sigma_acc_process
+    Eigen::MatrixXd Phi_a = calculate_Phi_a(step_time);
+    double phi = Phi_a(0, 0);
+    estimated_acc = Phi_a * estimated_acc;
+    estimated_differential_acc = Phi_a * estimated_differential_acc;
+    std::normal_distribution<> acc_r_process_noise(0.0, sigma_acc_r_process*sqrt(1 - phi*phi));
+    for (int i = 0; i < 3; ++i) estimated_acc(i) += acc_r_process_noise(mt);
+    for (int i = 0; i < 3; ++i) estimated_differential_acc(i) += acc_r_process_noise(mt);
+    // cdt
+    std::normal_distribution<> cdt_process_noise(0.0, sigma_cdt_process*sqrt(step_time/tau));
+    estimated_status(3) += cdt_process_noise(mt);
+    estimated_differential_status(3) += cdt_process_noise(mt);
+
     M = update_M_matrix(position_main, velocity_main, acceleration_main, position_target - position_main, estimated_differential_velocity, estimated_differential_acc);
 }
 
-// Orbitの更新を使えるように修正
+// Orbitの更新を使えるように修正．位置と速度はRK4で伝搬しているのが，共分散はオイラー法になっている．EKFなので仕方がない．
 vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration)
 {
   Eigen::Vector3d k0 = position_differential(velocity);
@@ -239,15 +265,15 @@ Eigen::MatrixXd PBD_dgps::update_M_matrix(const Eigen::Vector3d& position, const
   // clock
   Phi(3, 3) = 1.0;
   Phi(num_of_single_status + n_main + 3, num_of_single_status + n_main + 3) = 1.0;
-  Phi += step_time * A;
-  // AからPhiを求めるというこの構成も変えた方がいいのかもしれない．経験加速度に関してはdtを掛けない気がするし．
+  Phi += step_time * A; // Phiの求め方も変える．要素ごとに分けるべき
   // a
   Phi.block(7, 7, 3, 3) = calculate_Phi_a(step_time);
   Phi.block(num_of_single_status + n_main + 7, num_of_single_status + n_main + 7, 3, 3) = calculate_Phi_a(step_time);
 
   // ここもaについて修正．
   Eigen::MatrixXd Q = calculate_Q_matrix(n_main, n_common);
-  
+  // 観測するたびにNの部分を初期化？
+
   // Gamma = BQB^t
   Eigen::MatrixXd Gamma = pow(step_time, 2.0) * Q;
   // Gamma(3, 3) = pow(clock_sigma, 2.0); // ここも推定量ならこれはおかしい？
@@ -342,26 +368,33 @@ Eigen::MatrixXd PBD_dgps::calculate_A_matrix(const Eigen::Vector3d& position, co
   A(num_of_single_status + 4, num_of_single_status + 7) = 1.0 * 1e-6;
   A(num_of_single_status + 5, num_of_single_status + 8) = 1.0 * 1e-6;
   A(num_of_single_status + 6, num_of_single_status + 9) = 1.0 * 1e-6;
+  // (dr, da)
+  A(num_of_single_status, num_of_single_status + 7) = 1.0 * 1e-6* step_time/2;
+  A(num_of_single_status + 1, num_of_single_status + 8) = 1.0 * 1e-6* step_time/2;
+  A(num_of_single_status + 2, num_of_single_status + 9) = 1.0 * 1e-6* step_time/2;
 
   return A;
 }
 
-// Process noiseによる共分散行列へのノイズ分
+// Process noiseのvarianceを計算．
 Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n_main, const int n_common)
 {
   const int n = n_main + n_common;
   Eigen::MatrixXd Q = Eigen::MatrixXd::Zero(n + num_of_status, n + num_of_status);
-  for(int i = 0;i < 3;++i) Q(i, i) = pow(sigma_r_process, 2.0);
-  Q(3, 3) = pow(sigma_cdt_process, 2.0);
-  for(int i = 4;i < 7;++i) Q(i, i) = pow(sigma_v_process, 2.0);
-  for(int i = 7;i < 10;++i) Q(i, i) = pow(sigma_acc_r_process, 2.0);
-  for (int i = num_of_single_status; i < n_main + num_of_single_status; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
+  double phi = exp(-step_time / tau);
+  double q_acc = pow(sigma_acc_r_process, 2.0) * (1 - pow(phi, 2.0));
+  double q_cdt = sigma_cdt_process * sqrt(step_time / tau);
+  // for(int i = 0;i < 3;++i) Q(i, i) = pow(sigma_r_process, 2.0);
+  Q(3, 3) = q_cdt;
+  // for(int i = 4;i < 7;++i) Q(i, i) = pow(sigma_v_process, 2.0);
+  for(int i = 7;i < 10;++i) Q(i, i) = q_acc;
+  // for (int i = num_of_single_status; i < n_main + num_of_single_status; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
   int single_offset = num_of_single_status + n_main;
-  for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(sigma_r_process, 2.0);
-  Q(single_offset + 3, single_offset + 3) = pow(sigma_cdt_process, 2.0);
-  for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(sigma_v_process, 2.0);
-  for(int i = single_offset + 7; i < single_offset + num_of_single_status; ++i) Q(i, i) = pow(sigma_acc_r_process, 2.0);
-  for (int i = num_of_single_status + single_offset; i < num_of_status + n_main + n_common; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
+  // for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(sigma_r_process, 2.0);
+  Q(single_offset + 3, single_offset + 3) = q_cdt;
+  // for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(sigma_v_process, 2.0);
+  for(int i = single_offset + 7; i < single_offset + num_of_single_status; ++i) Q(i, i) = q_acc;
+  // for (int i = num_of_single_status + single_offset; i < num_of_status + n_main + n_common; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
 
   return Q;
 }
@@ -369,8 +402,7 @@ Eigen::MatrixXd PBD_dgps::calculate_Q_matrix(const int n_main, const int n_commo
 Eigen::MatrixXd PBD_dgps::calculate_Phi_a(const double dt)
 {
   // ここが各軸に応じて変わる部分なのか．
-  const double tau = 900; // [s] <- constに移すべきか？
-  double phi = exp(-dt / tau);
+  double phi = exp(-dt / tau); // constやないか
   Eigen::MatrixXd Phi_a = Eigen::MatrixXd::Identity(3, 3);
   Phi_a *= phi;
   return Phi_a;

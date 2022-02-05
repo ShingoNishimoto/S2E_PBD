@@ -48,7 +48,7 @@ class PBD_dgps
         Eigen::Vector4d estimated_status;
         //[vx[m/s], vy[m/s], vz[m/s]]
         Eigen::Vector3d estimated_velocity;
-        //[ax[mm/s^2], ay[mm/s^2], az[mm/s^2]]
+        //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
         Eigen::Vector3d estimated_acc; // ここの加速度は外乱とかのその他加速度
 
         Eigen::VectorXd estimated_bias;
@@ -60,7 +60,7 @@ class PBD_dgps
         Eigen::Vector4d estimated_differential_status;
         //[dvx[m/s], dvy[m/s], dvz[m/s]] <- mm/sの方がよさそう．
         Eigen::Vector3d estimated_differential_velocity;
-        //[dax[mm/s^2], day[mm/s^2], daz[mm/s^2]]
+        //[dax[nm/s^2], day[nm/s^2], daz[nm/s^2]]
         Eigen::Vector3d estimated_differential_acc;
         // 辞書が欲しい commonとmainをつなげるために
         Eigen::VectorXd estimated_target_bias;
@@ -68,6 +68,8 @@ class PBD_dgps
 
         std::map<const int, int> common_index_dict;
         
+        Eigen::VectorXd y_est; // 状態量ベクトル
+
         //初期化をもっとスマートにできるように考える
         vector<vector<bool>> pre_observed_vector{ {},{} }; // 名前分かりにくいので変えたい
         vector<vector<bool>> now_observed_vector{ {},{} };
@@ -82,10 +84,12 @@ class PBD_dgps
 
         const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一定でいいか．
 
+        Eigen::MatrixXd B;
         Eigen::MatrixXd M;
 
         const int num_of_single_status = 10; //+3+ns
         const int num_of_status = 20; //+3　+ns
+        const int num_of_gnss_channel = 12; // max receivable gnss number
 
         double step_time;
         double observe_step_time = 10.0;

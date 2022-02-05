@@ -24,8 +24,12 @@ extern const double sigma_acc_t_process;    //[nm/s^2]
 extern const double sigma_acc_n_process;    //[nm/s^2]
 extern const double sigma_cdt_process;    //[m]
 extern const double sigma_N_process;    //[cycle]
+
 extern const double mu_const; //GM_E m^3/s^2
 extern const double J2_const; //無次元 重力J2項
 extern const double Earth_Radius; //m
+
+// gauss marlov parameters
+extern const double tau; //[s]
 
 #endif
