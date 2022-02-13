@@ -25,7 +25,7 @@ class PBD_pod
         void OrbitPropagation();
         void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
         void ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
-        void resize_Matrix(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
+        void SetBiasToObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true);
         void KalmanFilter(const GnssObservedValues& gnss_observed_values, const GnssObservedValues& gnss_true);
 
         //仮
@@ -46,14 +46,14 @@ class PBD_pod
 
         Eigen::VectorXd estimated_bias;
 
-        vector<bool> pre_observed_vector;
-        vector<bool> now_observed_vector;
+        vector<bool> pre_observed_status;
+        vector<bool> now_observed_status;
         vector<int> pre_observed_sat_id;
         vector<int> now_observed_sat_id;
 
-        vector<double> first_L1_bias;
-        vector<double> first_L2_bias;
-        int num_of_sastellites;
+        vector<double> L1_bias;
+        vector<double> L2_bias;
+        int num_of_satellites;
 
         const double Cd = 2.928e-14;
 
@@ -64,11 +64,11 @@ class PBD_pod
         double step_time;
         double observe_step_time = 10.0;
         double log_step_time = 1.0;
-        Eigen::Vector3d position_differential(const Eigen::Vector3d& velocity) const;
-        Eigen::Vector3d velocity_differential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-        Eigen::MatrixXd update_M_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity);
-        Eigen::MatrixXd calculate_A_matrix(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-        Eigen::MatrixXd calculate_Q_matrix(const int n);
+        Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
+        Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+        Eigen::MatrixXd UpdateM(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity);
+        Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+        Eigen::MatrixXd CalculateQ(const int n);
 
         //clockの真値[m]
         double sat_clock_true;
@@ -83,6 +83,6 @@ class PBD_pod
         double geo_range_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position) const;
         double carrier_phase_calculator(const Eigen::Vector4d& sat_status, libra::Vector<3> gnss_position, double gnss_clock, double integer_bias, double lambda_narrow) const;
 
-        template <typename T> bool check_vector_equal(const vector<T>& a, const vector<T>& b);
+        template <typename T> bool CheckVectorEqual(const vector<T>& a, const vector<T>& b);
 };
 #endif

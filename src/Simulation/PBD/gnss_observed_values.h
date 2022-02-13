@@ -7,7 +7,7 @@
 
 struct GnssObservedValues
 {
-    std::vector<int> can_see_satellites_sat_id;
+    std::vector<int> observable_gnss_sat_id;
     std::vector<libra::Vector<3>> gnss_satellites_position;
     std::vector<double> gnss_clock;
 

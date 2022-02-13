@@ -30,6 +30,7 @@ extern const double J2_const; //無次元 重力J2項
 extern const double Earth_Radius; //m
 
 // gauss marlov parameters
-extern const double tau; //[s]
+extern const double tau_a; //[s]
+extern const double tau_cdt; //[s]
 
 #endif
