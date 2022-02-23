@@ -315,9 +315,14 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
   // 観測するたびにNの部分を初期化？
 
   // Gamma = BQB^t
-  Eigen::MatrixXd Gamma = pow(step_time, 2.0) * B * Q * B.transpose(); //pow(step_time, 2.0)?
-
+  Eigen::MatrixXd Gamma = B * Q * B.transpose();
   // 他のprocess noiseも入れて感度を見てみる．
+  Gamma.block(0, 0, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity();
+  Gamma.block(4, 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity();
+  Gamma.block(single_dimension, single_dimension, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity();
+  Gamma.block(single_dimension + 4, single_dimension+ 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity();
+  Gamma *= pow(step_time, 2.0);
+
   Eigen::MatrixXd res = Phi * M * Phi.transpose() + Gamma;
   // Nのない部分を0に落とす？
   int n_main = observe_info.at(0).now_observed_gnss_sat_id.size();
@@ -474,6 +479,8 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   // GRAPHIC*2 + SDCPにする．
   Eigen::VectorXd z = Eigen::VectorXd::Zero(observation_dimension); //観測ベクトル
   Eigen::VectorXd h_x = Eigen::VectorXd::Zero(observation_dimension); // 観測モデル行列
+  // ここがほぼ差なくて．．．あんま関係ないか．
+
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(observation_dimension, state_dimension); //観測行列（dhx/dx）
   // Oneにしている部分がどう効いてくるのかの確認は必要．
   Eigen::VectorXd R_V = Eigen::MatrixXd::Ones(observation_dimension, 1); // 観測誤差共分散．
@@ -525,20 +532,20 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   // 正則チェック
   if (abs(tmp.determinant()) < 1e-15)
   {
-    cout << "tmp matirx is singular" << endl; //めちゃくちゃ引っかかっている．
+    //cout << "tmp matirx is singular" << endl; //めちゃくちゃ引っかかっている．
     // abort();
   }
   //カルマンゲイン
   Eigen::MatrixXd K = M * H.transpose() * tmp.inverse();
     
   // 観測量の無い項の影響をなくすために
-  /*
-  int n_main = observe_info_main.now_observed_gnss_sat_id.size();
+
+  int n_main = observe_info.at(0).now_observed_gnss_sat_id.size();
   for (int i=0; i<num_of_gnss_channel-n_main; ++i)
   {
     K.block(0, n_main + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
   }
-  int n_target = observe_info_target.now_observed_gnss_sat_id.size();
+  int n_target = observe_info.at(1).now_observed_gnss_sat_id.size();
   for (int i = 0; i < num_of_gnss_channel - n_target; ++i)
   {
     K.block(0, num_of_gnss_channel + n_target + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
@@ -548,7 +555,6 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   {
     K.block(0, 2*num_of_gnss_channel + n_common + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
   }
-  */
 
   Eigen::VectorXd x_predict = Eigen::VectorXd(state_dimension);
   x_predict.topRows(3) = x_est_main.position;
@@ -578,7 +584,11 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   x_est_target.acceleration = x_update.block(single_dimension + 7, 0, 3, 1);
   x_est_target.bias = x_update.bottomRows(num_of_gnss_channel);
 
-  M = M - K * H * M; // rに対するMの観測更新がうまくいっていない．
+  // Hの計算が正確すぎるのか？
+  Eigen::MatrixXd I = Eigen::MatrixXd::Identity(state_dimension, state_dimension);
+  tmp = (I - K * H);
+  M = tmp*M*tmp.transpose() + K*R*K.transpose();
+  // M = (I - K * H) * M; // Mの観測更新がうまくいっていない．落ちすぎている．
   //Eigen::MatrixXd H_trans = H.transpose();
   //M = M - H.inverse()*R*H_trans.inverse();
 
@@ -1012,6 +1022,11 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
       */
     }
   }
+  // now_index以上の部分を0に落とすということをやる．
+  x_est.bias.block(now_index + 1, 0, num_of_gnss_channel - now_index - 1, 1) = Eigen::VectorXd::Zero(num_of_gnss_channel - now_index - 1);
+  // Mはいいのか？
+
+
   /*
   if (abs(M.determinant()) < 10e-13)
   {
