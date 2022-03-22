@@ -142,6 +142,7 @@ class PBD_dgps
     // for differential
     Eigen::MatrixXd CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const;
     Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
+    Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
     Eigen::MatrixXd CalculateQ();
     Eigen::MatrixXd CalculatePhi_a(const double dt);
     void UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda);

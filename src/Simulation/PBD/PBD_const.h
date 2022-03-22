@@ -29,7 +29,7 @@ extern const double mu_const; //GM_E m^3/s^2
 extern const double J2_const; //無次元 重力J2項
 extern const double Earth_Radius; //m
 
-// gauss marlov parameters
+// gauss markov parameters
 extern const double tau_a; //[s]
 extern const double tau_cdt; //[s]
 
