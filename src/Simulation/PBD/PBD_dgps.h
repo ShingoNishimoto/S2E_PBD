@@ -23,9 +23,9 @@ class PBD_dgps
   public:
     struct EstimatedVariables
     {
-      //[x:m, y:m, z:m]
+      //[x[m], y[m], z[m]]
       Eigen::Vector3d position;
-      // [cdt: [m]
+      // [cdt[m]]
       Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうるので
       //[vx[m/s], vy[m/s], vz[m/s]]
       Eigen::Vector3d velocity;
@@ -46,7 +46,6 @@ class PBD_dgps
     //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
     void KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target);
 
-    //仮
     //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
     bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
 

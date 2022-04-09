@@ -159,8 +159,6 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     GnssObservedValues gnss_true_target;
     GetGnssPositionObservation(gnss_satellites_, target_orbit_, 1, gnss_observed_values_target, gnss_true_target, sat_target_clock_true);
     ProcessGnssObservation(gnss_observed_values_target, gnss_true_target, 1);
-    //std::pair<GnssObservedValues, GnssObservedValues> gnss_observed_pair = std::make_pair(gnss_observed_values_main, gnss_observed_values_target);
-    //std::pair<GnssObservedValues, GnssObservedValues> gnss_true_pair = std::make_pair(gnss_true_main, gnss_true_target);
 
     // ここにFindCommonSatellite?
     SetBiasToObservation(0, x_est_main, gnss_observed_values_main, gnss_true_main);
@@ -212,7 +210,6 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
   return;
 }
 
-// aがおかしい気がする．単位の間違いか？
 void PBD_dgps::OrbitPropagation()
 {
   //RK4
@@ -374,7 +371,6 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
   Gamma.block(single_dimension + 4, single_dimension+ 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity()* pow(step_time, 2.0);
   // N process <- ここやる！！！！
 
-
   Eigen::MatrixXd res = Phi * M * Phi.transpose() + Gamma;
   // Nのない部分を0に落とす
   int n_main = observe_info.at(0).now_observed_gnss_sat_id.size();
@@ -384,47 +380,6 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
   
   return res;
 }
-
-/*
-// Jacobi or STM for pod
-Eigen::MatrixXd PBD_dgps::CalculateA(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const
-{
-    double r = position.norm();
-    double v = velocity.norm();
-
-    double x = position(0); double y = position(1); double z = position(2);
-    double vx = velocity(0); double vy = velocity(1); double vz = velocity(2);
-
-    double J2_coefficient = 3.0/2.0*mu_const*J2_const*Earth_Radius*Earth_Radius; 
-
-    Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_of_status, num_of_status);
-    // (r, v)
-    A(0,4) = 1.0; A(1,5) = 1.0; A(2,6) = 1.0;
-
-    // (v, r)
-    A(4,0) = 3.0*mu_const*x*x/pow(r, 5.0) - mu_const/pow(r, 3.0) - J2_coefficient*(1.0/pow(r, 5.0) - 5.0*(x*x + z*z)/pow(r, 7.0) + 35.0*x*x*z*z/pow(r, 9.0));
-    A(4,1) = 3.0*mu_const*x*y/pow(r, 5.0) - J2_coefficient*( -5.0*x*y/pow(r, 7.0) + 35.0*x*y*z*z/pow(r, 9.0));
-    A(4,2) = 3.0*mu_const*x*z/pow(r, 5.0) - J2_coefficient*( -15.0*x*z/pow(r, 7.0) + 35.0*x*z*z*z/pow(r, 9.0));
-    A(5,0) = 3.0*mu_const*x*y/pow(r, 5.0) - J2_coefficient*( -5.0*x*y/pow(r, 7.0) + 35.0*x*y*z*z/pow(r, 9.0));
-    A(5,1) = 3.0*mu_const*y*y/pow(r, 5.0) - mu_const/pow(r, 3.0) - J2_coefficient*(1.0/pow(r, 5.0) - 5.0*(y*y + z*z)/pow(r, 7.0) + 35.0*y*y*z*z/pow(r, 9.0));
-    A(5,2) = 3.0*mu_const*y*z/pow(r, 5.0) - J2_coefficient*( -15.0*y*z/pow(r, 7.0) + 35.0*y*z*z*z/pow(r, 9.0));
-    A(6,0) = 3.0*mu_const*x*z/pow(r, 5.0) - J2_coefficient*( -15.0*x*z/pow(r, 7.0) + 35.0*x*z*z*z/pow(r, 9.0));
-    A(6,1) = 3.0*mu_const*y*z/pow(r, 5.0) - J2_coefficient*( -15.0*y*z/pow(r, 7.0) + 35.0*y*z*z*z/pow(r, 9.0));
-    A(6,2) = 3.0*mu_const*z*z/pow(r, 5.0) - mu_const/pow(r, 3.0) - J2_coefficient*(3.0/pow(r, 5.0) - 30.0*z*z/pow(r, 7.0) + 35.0*pow(z, 4.0)/pow(r, 9.0));
-
-    // これ速度に入る？普通は加速度として入ってくるはず．
-    // A(4,4) = -Cd*(vx*vx/v + v);    A(4,5) = -Cd*vx*vy/v;    A(4,6) = -Cd*vx*vz/v;
-    // A(5,4) = -Cd*vx*vy/v;    A(5,5) = -Cd*(vy*vy/v + v);    A(5,6) = -Cd*vy*vz/v;
-    // A(6,4) = -Cd*vx*vz/v;    A(6,5) = -Cd*vy*vz/v;    A(6,6) = -Cd*(vz*vz/v + v);
-    
-    // これを入れるなら1/2t^2も入れたい<-非線形こうなので無理？
-    // A(4,7) = 1.0;	A(5,8) = 1.0;	A(6,9) = 1.0;
-
-    //A(4,10) = -v*vx;    A(5,10) = -v*vy;    A(6,10) = -v*vz;
-
-    return A;
-}
-*/
 
 // この段階必要ない気がする．
 Eigen::MatrixXd PBD_dgps::CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const
@@ -577,7 +532,6 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   for (const int& id :all_observed_gnss_ids)
   {
     // if main
-    // int id = all_observed_gnss_ids.at(i);
     auto it_main = find(observe_info.at(0).now_observed_gnss_sat_id.begin(), observe_info.at(0).now_observed_gnss_sat_id.end(), id);
     if (it_main != observe_info.at(0).now_observed_gnss_sat_id.end() && *it_main == id)
     {
@@ -596,7 +550,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
       UpdateObservationsSDCP(id, gnss_observed_main, gnss_observed_target, z, h_x, H, R_V);
     }
   }
-  // これでいい気がする．
+  // 観測量のない部分にも割り当てるのはだめらしい．．．
   /*
   H.block(0, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = 0.5 * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
   H.block(num_of_gnss_channel, single_dimension + num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = 0.5 * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
@@ -795,7 +749,6 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, const GnssObservedV
   H(row_offset, col_offset_main) = -1.0; // SDCP N
   H(row_offset, col_offset_target) = 1.0; // SDCP N
   Rv(row_offset) = pow(sqrt(2.0) * carrier_sigma, 2.0);
-  // Rv(row_offset) = pow(2.0*carrier_sigma, 2.0); // 少し大きめ
 };
 
 static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, const int gnss_sat_id)
@@ -977,6 +930,7 @@ void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
   const int main_sat_id = sat_id_pair.first;
   const int target_sat_id = sat_id_pair.second;
   int common_index = 0;
+  // ここはiterで取得でいいのかも？
   for (int i = 0; i < observe_info.at(main_sat_id).now_observed_gnss_sat_id.size(); ++i)
   {
     for (int j = 0; j < observe_info.at(target_sat_id).now_observed_gnss_sat_id.size(); ++j)
@@ -989,7 +943,7 @@ void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
         common_observed_status.at(gnss_sat_id) = true;
         common_index_dict.at(gnss_sat_id) = common_index; // このindexはほんまに必要なのか？
         ++common_index;
-        pre_common_observing_ch = now_common_observing_ch;
+        pre_common_observing_ch = now_common_observing_ch; // ???
         //AllocateToCh(gnss_sat_id, now_common_observing_ch, common_free_ch);
         break;
       }
