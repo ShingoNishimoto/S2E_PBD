@@ -2,8 +2,14 @@
 #include <set>
 #include "PBD_dgps.h"
 #include "PBD_const.h"
+
+// clock model
 #define CLOCK_IS_WHITE_NOISE (1)
 // #define CLOCK_IS_RANDOM_WALK (1)
+
+// inverse calculation method
+#define CHOLESKY (0)
+#define QR (1)
 
 static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 
@@ -191,20 +197,21 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << true_bias_target(i) << ","; // N_true
     for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << x_est_target.bias(i) << ","; // N_est
     for (int i = 0; i < state_dimension; ++i) ofs << fixed << setprecision(30) << M(i, i) << ",";
-    /*
-    cout << M(state_dimension - 10, state_dimension - 10) << endl;
-    if (M(state_dimension - 10, state_dimension - 10) < 1e-5)
-    {
-      abort();
-    }
-    */
     // record visible gnss sat number
+    /*
     int ans = 0;
     for(int i = 0;i < num_of_gnss_satellites;++i){
         auto gnss_position = gnss_satellites_.GetSatellitePositionEci(i);
         if(CheckCanSeeSatellite(sat_position, gnss_position)) ++ans;
     }
     ofs << ans << endl;
+    */
+    int visible_gnss_num_main = observe_info.at(0).now_observed_gnss_sat_id.size();
+    int visible_gnss_num_target = observe_info.at(0).now_observed_gnss_sat_id.size();
+    int visible_gnss_num_common = common_observed_gnss_sat_id.size();
+    ofs << visible_gnss_num_main << ",";
+    ofs << visible_gnss_num_target << ",";
+    ofs << visible_gnss_num_common << endl;
   }
 
   return;
@@ -574,15 +581,20 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   */
   Eigen::MatrixXd tmp = R + hmh; // (observation_num, observation_num)
   // 観測量がないところは0にし直すみたいな加工が必要かもしれない．数字の桁数で打ち切りみたいな形にできればいい．
-  // 正則チェック
-  if (abs(tmp.determinant()) < 1e-15)
-  {
-    //cout << "tmp matirx is singular" << endl; //めちゃくちゃ引っかかっている．
-    // abort();
-  }
   //カルマンゲイン
+#if CHOLESKY
+  Eigen::MatrixXd tmpT = tmp.transpose();
+  Eigen::LDLT<Eigen::MatrixXd> LDLTOftmpT(tmpT);
+  Eigen::MatrixXd KT = LDLTOftmpT.solve(H * M.transpose());
+  Eigen::MatrixXd K = KT.transpose();
+#elif QR
+  Eigen::MatrixXd tmpT = tmp.transpose();
+  Eigen::ColPivHouseholderQR<Eigen::MatrixXd> QROftmpT(tmpT);
+  Eigen::MatrixXd KT = QROftmpT.solve(H * M.transpose());
+  Eigen::MatrixXd K = KT.transpose();
+#else
   Eigen::MatrixXd K = M * H.transpose() * tmp.inverse();
-    
+#endif
   // 観測量の無い項の影響をなくすために
   // int n_main = observe_info.at(0).now_observed_gnss_sat_id.size();
   // for (int i=0; i<num_of_gnss_channel-n_main; ++i)
