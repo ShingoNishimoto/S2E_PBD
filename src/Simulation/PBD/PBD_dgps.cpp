@@ -166,7 +166,6 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     GetGnssPositionObservation(gnss_satellites_, target_orbit_, 1, gnss_observed_values_target, gnss_true_target, sat_target_clock_true);
     ProcessGnssObservation(gnss_observed_values_target, gnss_true_target, 1);
 
-    // ここにFindCommonSatellite?
     SetBiasToObservation(0, x_est_main, gnss_observed_values_main, gnss_true_main);
     SetBiasToObservation(1, x_est_target, gnss_observed_values_target, gnss_true_target);
     KalmanFilter(gnss_observed_values_main, gnss_observed_values_target);
@@ -207,11 +206,24 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     ofs << ans << endl;
     */
     int visible_gnss_num_main = observe_info.at(0).now_observed_gnss_sat_id.size();
-    int visible_gnss_num_target = observe_info.at(0).now_observed_gnss_sat_id.size();
+    int visible_gnss_num_target = observe_info.at(1).now_observed_gnss_sat_id.size();
     int visible_gnss_num_common = common_observed_gnss_sat_id.size();
     ofs << visible_gnss_num_main << ",";
     ofs << visible_gnss_num_target << ",";
-    ofs << visible_gnss_num_common << endl;
+    ofs << visible_gnss_num_common << ",";
+    // main observe gnss sat id
+    for (int i = 0; i < num_of_gnss_channel; ++i)
+    {
+      if (i >= visible_gnss_num_main) ofs << -1 << ",";
+      else ofs << observe_info.at(0).now_observed_gnss_sat_id.at(i) << ",";
+    }
+    // target observe gnss sat id
+    for (int i = 0; i < num_of_gnss_channel; ++i)
+    {
+      if (i >= visible_gnss_num_target) ofs << -1 << ",";
+      else ofs << observe_info.at(1).now_observed_gnss_sat_id.at(i) << ",";
+    }
+    ofs << endl;
   }
 
   return;
@@ -332,7 +344,6 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   return all_acceleration; // m/s2
 }
 
-// Mの各要素の単位を改善した方がいい．急激に小さい量だけに減るのでMの正則性が失われている．
 Eigen::MatrixXd PBD_dgps::UpdateM()
 {
   // int n_main = estimated_bias.size(); //mainの見るGNSS数
@@ -517,8 +528,6 @@ Eigen::MatrixXd PBD_dgps::CalculatePhi_a(const double dt)
   return Phi_a;
 };
 
-// 観測量と状態量をchで管理するのか上から埋めていくのかはよく考える．数学的に問題がないのかを
-// 行列サイズ一定方針は無理なんかも．
 void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target)
 {
   // gnss_observed_hoge の観測される時間はどうなっているのか？
@@ -530,7 +539,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
 
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(observation_dimension, state_dimension); //観測行列（dhx/dx）
   // Oneにしている部分がどう効いてくるのかの確認は必要．
-  Eigen::VectorXd R_V = Eigen::MatrixXd::Ones(observation_dimension, 1); // 観測誤差共分散．
+  Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(observation_dimension, 1); // 観測誤差共分散．
   vector<int> all_observed_gnss_ids = observe_info.at(0).now_observed_gnss_sat_id;
   all_observed_gnss_ids.insert(all_observed_gnss_ids.end(), observe_info.at(1).now_observed_gnss_sat_id.begin(), observe_info.at(1).now_observed_gnss_sat_id.end()); // concate
   sort(all_observed_gnss_ids.begin(), all_observed_gnss_ids.end());
@@ -557,17 +566,6 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
       UpdateObservationsSDCP(id, gnss_observed_main, gnss_observed_target, z, h_x, H, R_V);
     }
   }
-  // 観測量のない部分にも割り当てるのはだめらしい．．．
-  /*
-  H.block(0, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = 0.5 * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
-  H.block(num_of_gnss_channel, single_dimension + num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = 0.5 * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
-  H.block(2 * num_of_gnss_channel, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = -Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
-  H.block(2 * num_of_gnss_channel, single_dimension + num_of_single_status, num_of_gnss_channel, num_of_gnss_channel) = Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel);
-  */
-  // R_V.block(0, 0, 2*num_of_gnss_channel, 1) = Eigen::VectorXd::Constant(2*num_of_gnss_channel, pseudo_sigma / 2.0);
-  // R_V.block(2*num_of_gnss_channel, 0, num_of_gnss_channel, 1) = Eigen::VectorXd::Constant(num_of_gnss_channel, sqrt(2.0) * carrier_sigma);
-  // clock
-  // H.block(0, 3, num_of_gnss_channel, 1) = Eigen::MatrixXd::Ones(num_of_gnss_channel, 1);
     
   Eigen::MatrixXd R = R_V.asDiagonal();
 
@@ -582,41 +580,13 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   Eigen::MatrixXd tmp = R + hmh; // (observation_num, observation_num)
   // 観測量がないところは0にし直すみたいな加工が必要かもしれない．数字の桁数で打ち切りみたいな形にできればいい．
   //カルマンゲイン
-#if CHOLESKY
-  Eigen::MatrixXd tmpT = tmp.transpose();
-  Eigen::LDLT<Eigen::MatrixXd> LDLTOftmpT(tmpT);
-  Eigen::MatrixXd KT = LDLTOftmpT.solve(H * M.transpose());
-  Eigen::MatrixXd K = KT.transpose();
-#elif QR
-  Eigen::MatrixXd tmpT = tmp.transpose();
-  Eigen::ColPivHouseholderQR<Eigen::MatrixXd> QROftmpT(tmpT);
-  Eigen::MatrixXd KT = QROftmpT.solve(H * M.transpose());
-  Eigen::MatrixXd K = KT.transpose();
-#else
-  Eigen::MatrixXd K = M * H.transpose() * tmp.inverse();
-#endif
-  // 観測量の無い項の影響をなくすために
-  // int n_main = observe_info.at(0).now_observed_gnss_sat_id.size();
-  // for (int i=0; i<num_of_gnss_channel-n_main; ++i)
-  // {
-  //   K.block(0, n_main + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
-  // }
-  // int n_target = observe_info.at(1).now_observed_gnss_sat_id.size();
-  // for (int i = 0; i < num_of_gnss_channel - n_target; ++i)
-  // {
-  //   K.block(0, num_of_gnss_channel + n_target + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
-  // }
-  // int n_common = common_observed_gnss_sat_id.size();
-  // for (int i = 0; i < num_of_gnss_channel - n_common; ++i)
-  // {
-  //   K.block(0, 2*num_of_gnss_channel + n_common + i, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
-  // }
+  Eigen::MatrixXd K = CalculateK(H, tmp);
 
   Eigen::VectorXd x_predict = Eigen::VectorXd(state_dimension);
   x_predict.topRows(3) = x_est_main.position;
   x_predict.block(3, 0, 1, 1) = x_est_main.clock;
   x_predict.block(4, 0, 3, 1)  = x_est_main.velocity;
-  x_predict.block(7, 0, 3, 1) = x_est_main.acceleration; // 観測更新のタイミングで初期化していいのかもしれない．．．
+  x_predict.block(7, 0, 3, 1) = x_est_main.acceleration;
   x_predict.block(10, 0, num_of_gnss_channel, 1) = x_est_main.bias;
   //x_predict(10) = Cd;
   x_predict.block(single_dimension, 0, 3, 1) = x_est_target.position;
@@ -626,7 +596,6 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   x_predict.bottomRows(num_of_gnss_channel) = x_est_target.bias;
 
   Eigen::VectorXd x_update = x_predict + K*(z - h_x); // 完全な0ではないからリセットが必要?
-  // ここの更新でaの座標系がずれていないか？
 
   //更新
   x_est_main.position = x_update.topRows(3);
@@ -645,7 +614,7 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   tmp = (I - K*H);
   M = tmp*M*tmp.transpose() + K*R*K.transpose(); // 負になるのが存在しているが，これは何？
   // M = (I - K * H) * M; // Mの観測更新がうまくいっていない．落ちすぎている．
-  // Nについて，収束している？ものは0に落とす．
+  // TODO: Nについて，収束している？ものは0に落とす．
   for (int i = 0; i < num_of_gnss_channel; ++i)
   {
     int N_offset = num_of_single_status + i;
@@ -686,6 +655,89 @@ void PBD_dgps::KalmanFilter(const GnssObservedValues& gnss_observed_main, const 
   }
   return;
 }
+
+Eigen::MatrixXd PBD_dgps::CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S)
+{
+  int observe_gnss_num_m = observe_info.at(0).now_observed_gnss_sat_id.size();
+  int observe_gnss_num_t = observe_info.at(1).now_observed_gnss_sat_id.size();
+  int observe_gnss_num_c = common_observed_gnss_sat_id.size();
+
+  Eigen::MatrixXd MHt = M * H.transpose();
+  ResizeS(S, observe_gnss_num_m, observe_gnss_num_t, observe_gnss_num_c);
+  ResizeMHt(MHt, observe_gnss_num_m, observe_gnss_num_t, observe_gnss_num_c);
+#if CHOLESKY
+  Eigen::MatrixXd ST = S.transpose();
+  Eigen::LDLT<Eigen::MatrixXd> LDLTOftmpT(ST);
+  Eigen::MatrixXd KT = LDLTOftmpT.solve(MHt.transpose());
+  Eigen::MatrixXd K_calc = KT.transpose();
+#elif QR
+  Eigen::MatrixXd ST = S.transpose();
+  Eigen::ColPivHouseholderQR<Eigen::MatrixXd> QROftmpT(ST);
+  Eigen::MatrixXd KT = QROftmpT.solve(MHt.transpose());
+  Eigen::MatrixXd K_calc = KT.transpose();
+#else
+  Eigen::MatrixXd K_calc = MHt * S.inverse();
+#endif
+  Eigen::MatrixXd K = Eigen::MatrixXd::Zero(state_dimension, observation_dimension);
+  K.topLeftCorner(num_of_single_status + observe_gnss_num_m, observe_gnss_num_m) = K_calc.topLeftCorner(num_of_single_status + observe_gnss_num_m, observe_gnss_num_m);
+  K.block(single_dimension, 0, num_of_single_status + observe_gnss_num_t, observe_gnss_num_m) = K_calc.block(num_of_single_status + observe_gnss_num_m, 0, num_of_single_status + observe_gnss_num_t, observe_gnss_num_m);
+  K.block(0, num_of_gnss_channel, num_of_single_status + observe_gnss_num_m, observe_gnss_num_t) = K_calc.block(0, observe_gnss_num_m, num_of_single_status + observe_gnss_num_m, observe_gnss_num_t);
+  K.block(single_dimension, num_of_gnss_channel, num_of_single_status + observe_gnss_num_t, observe_gnss_num_t) = K_calc.block(num_of_single_status + observe_gnss_num_m, observe_gnss_num_m, num_of_single_status + observe_gnss_num_t, observe_gnss_num_t);
+  K.block(0, 2*num_of_gnss_channel, num_of_single_status + observe_gnss_num_m, observe_gnss_num_c) = K_calc.block(0, observe_gnss_num_m+observe_gnss_num_t, num_of_single_status + observe_gnss_num_m, observe_gnss_num_c);
+  K.block(single_dimension, 2*num_of_gnss_channel, num_of_single_status + observe_gnss_num_t, observe_gnss_num_c) = K_calc.block(num_of_single_status + observe_gnss_num_m, observe_gnss_num_m+observe_gnss_num_t, num_of_single_status + observe_gnss_num_t, observe_gnss_num_c);
+  return K;
+};
+
+void PBD_dgps::RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row)
+{
+  // 消していくとずれるから後ろから
+  for (int row = end_row; row >= begin_row; --row) {
+    unsigned int numRows = matrix.rows() - 1;
+    unsigned int numCols = matrix.cols();
+
+    if (row < numRows)
+      matrix.block(row, 0, numRows - row, numCols) = matrix.bottomRows(numRows - row);
+
+    matrix.conservativeResize(numRows, numCols);
+  }
+}
+
+void PBD_dgps::RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col)
+{
+  // 消していくとずれるから後ろから
+  for (int col = end_col; col >= begin_col; --col) {
+
+    unsigned int numRows = matrix.rows();
+    unsigned int numCols = matrix.cols() - 1;
+
+  if (col < numCols)
+    matrix.block(0, col, numRows, numCols - col) = matrix.rightCols(numCols - col);
+
+  matrix.conservativeResize(numRows, numCols);
+  }
+};
+
+void PBD_dgps::ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c)
+{
+  // ここも後ろから．
+  RemoveRows(S, 2*num_of_gnss_channel + observe_gnss_c, 3*num_of_gnss_channel - 1);
+  RemoveColumns(S, 2*num_of_gnss_channel + observe_gnss_c, 3*num_of_gnss_channel - 1);
+  RemoveRows(S, num_of_gnss_channel + observe_gnss_t, 2*num_of_gnss_channel - 1);
+  RemoveColumns(S, num_of_gnss_channel + observe_gnss_t, 2*num_of_gnss_channel - 1);
+  RemoveRows(S, observe_gnss_m, num_of_gnss_channel - 1);
+  RemoveColumns(S, observe_gnss_m, num_of_gnss_channel - 1);
+};
+
+void PBD_dgps::ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c)
+{
+  // ここも後ろから．
+  RemoveRows(MHt, single_dimension + num_of_single_status + observe_gnss_t, state_dimension - 1);
+  RemoveRows(MHt, num_of_single_status + observe_gnss_m, single_dimension - 1);
+  RemoveColumns(MHt, 2*num_of_gnss_channel + observe_gnss_c, 3*num_of_gnss_channel - 1);
+  RemoveColumns(MHt, num_of_gnss_channel + observe_gnss_t, 2*num_of_gnss_channel - 1);
+  RemoveColumns(MHt, observe_gnss_m, num_of_gnss_channel - 1);
+};
+
 
 void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, const GnssObservedValues& gnss_observed_val, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
@@ -918,7 +970,6 @@ void PBD_dgps::ProcessGnssObservation(GnssObservedValues& gnss_observed_values, 
     return;
 }
 
-// ここがバグっている？
 void PBD_dgps::UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda)
 {
   if (now_main_observing_ch.count(gnss_sat_id))
@@ -1026,19 +1077,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
     // 見えなくなったとき
     else if (observe_info.at(sat_id).pre_observed_status.at(i) == true && observe_info.at(sat_id).now_observed_status.at(i) == false)
     {
-      // if (pre_index != pre_index_from_sat_id.at(i)) {
-      //   cout << "pre index something is wrong" << endl;
-      //   abort();
-      // }
-      // これ変やな．見えなくなったときは飛ばせばいいのでは？
-      /*
-      x_est.bias(pre_index) = 0.0; 
-      int offset = sat_id*single_dimension + num_of_single_status + pre_index;
-      M.block(0, offset, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
-      M.block(offset, 0, 1, state_dimension) = Eigen::MatrixXd::Zero(1, state_dimension);
-      // この行は必要ない
-      M(num_of_single_status + pre_index, num_of_single_status + pre_index) = 0.0; //pow(sigma_N_process, 2.0); // 対角だけ残す．1とかでいいのか？
-      */
+      // 何もせず飛ばす．
       ++pre_index;
     }
     else if (observe_info.at(sat_id).pre_observed_status.at(i) == false && observe_info.at(sat_id).now_observed_status.at(i) == true)
@@ -1051,6 +1090,9 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
       std::normal_distribution<> N_dist(0.0, sigma_N_ini);
       x_est.bias(now_index) = N_dist(mt); // こいつもGauss Makov過程にした方がいいらしい?
       int offset = sat_id * single_dimension + num_of_single_status + now_index;
+      // 行と列に関してもリセット
+      M.block(0, offset, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
+      M.block(offset, 0, 1, state_dimension) = Eigen::MatrixXd::Zero(1, state_dimension);
       M(offset, offset) = pow(sigma_N_ini, 2.0);
       ++now_index;
     }
@@ -1065,7 +1107,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
     }
   }
   // now_index以上の部分を0に落とすということをやる．
-  x_est.bias.block(now_index + 1, 0, num_of_gnss_channel - now_index - 1, 1) = Eigen::VectorXd::Zero(num_of_gnss_channel - now_index - 1);
+  x_est.bias.block(now_index, 0, num_of_gnss_channel - now_index, 1) = Eigen::VectorXd::Zero(num_of_gnss_channel - now_index);
 
 
   /*
@@ -1086,13 +1128,6 @@ void PBD_dgps::SetBiasToObservation(const int sat_id, EstimatedVariables& x_est,
     Eigen::MatrixXd pre_M = M;
     int n = observe_info.at(sat_id).now_observed_gnss_sat_id.size();
     int n_pre = observe_info.at(sat_id).pre_observed_gnss_sat_id.size();
-    
-    // M = Eigen::MatrixXd::Zero(state_dimension, state_dimension); //0クリア <- これ必要かな？
-    // bias以外のstatusはそのまま
-    /*
-    M.topLeftCorner(num_of_single_status, num_of_single_status) = pre_M.topLeftCorner(num_of_single_status, num_of_single_status);
-    M.block(single_dimension, single_dimension, num_of_single_status, num_of_single_status) = pre_M.block(single_dimension, single_dimension, num_of_single_status, num_of_single_status);
-    */
 
     UpdateBiasForm(sat_id, x_est);
     // update observation state info

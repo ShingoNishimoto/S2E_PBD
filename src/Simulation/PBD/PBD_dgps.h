@@ -45,6 +45,8 @@ class PBD_dgps
     void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est);
     //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
     void KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target);
+    void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
+    void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
 
     //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
     bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
@@ -99,11 +101,7 @@ class PBD_dgps
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．
-    //vector<vector<bool>> pre_observed_status{ {},{} };
-    //vector<vector<bool>> now_observed_status{ {},{} };
     vector<bool> common_observed_status{};
-    //vector<vector<int>> pre_observed_gnss_sat_id{ {},{} };
-    //vector<vector<int>> now_observed_gnss_sat_id{ {},{} };
     vector<int> common_observed_gnss_sat_id{};
     
     // now, preが必要か？
@@ -118,6 +116,7 @@ class PBD_dgps
     vector<vector<double>> L2_bias{ {},{} };
     int num_of_gnss_satellites;
 
+    // air drag balistic coeficient
     const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一定でいいか．
 
     Eigen::MatrixXd M;
@@ -144,6 +143,9 @@ class PBD_dgps
     Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
     Eigen::MatrixXd CalculateQ();
     Eigen::MatrixXd CalculatePhi_a(const double dt);
+    Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
+    void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
+    void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda);
     void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, const GnssObservedValues& gnss_observed_val, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void UpdateObservationsSDCP(const int gnss_sat_id, const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
