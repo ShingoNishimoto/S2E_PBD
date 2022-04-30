@@ -14,8 +14,7 @@
 #include "SimTime.h"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
-
-#include "gnss_observed_values.h"
+#include "PBD_GnssObservation.h"
 
 
 class PBD_dgps
@@ -26,7 +25,7 @@ class PBD_dgps
       //[x[m], y[m], z[m]]
       Eigen::Vector3d position;
       // [cdt[m]]
-      Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうるので
+      Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうる．
       //[vx[m/s], vy[m/s], vz[m/s]]
       Eigen::Vector3d velocity;
       //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
@@ -56,6 +55,7 @@ class PBD_dgps
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
   private:
+    // 複数衛星に拡張するのならorbitsにした方がいい．
     // main satellite
     const Orbit& main_orbit_;
     // target satellite
@@ -66,12 +66,12 @@ class PBD_dgps
 
     Eigen::VectorXd true_bias_main;
 
-    std::map<const int, int> main_index_dict;
+    // std::map<const int, int> main_index_dict;
 
     // 辞書が欲しい commonとmainをつなげるために
     Eigen::VectorXd true_bias_target; // [m]
 
-    std::map<const int, int> common_index_dict;
+    // std::map<const int, int> common_index_dict;
     
     // Eigen::VectorXd x_true; // 状態量真値 for log
     // シンプルにここが参照になっていないからか．
@@ -105,13 +105,16 @@ class PBD_dgps
     vector<int> common_observed_gnss_sat_id{};
     
     // now, preが必要か？
+    /*
     std::map<const int, int> pre_main_observing_ch; // <ch, gnss_sat_id>
     std::map<const int, int> now_main_observing_ch;
     std::map<const int, int> pre_common_observing_ch;
     std::map<const int, int> now_common_observing_ch;
     vector<int> main_free_ch{};
     vector<int> common_free_ch{};
+    */
 
+    // これがこのクラスにあるのもおかしい．推定している部分とは分ける．
     vector<vector<double>> L1_bias{ {},{} };
     vector<vector<double>> L2_bias{ {},{} };
     int num_of_gnss_satellites;
@@ -158,7 +161,7 @@ class PBD_dgps
     double sat_main_clock_true;
     double sat_target_clock_true;
 
-    //マスク角 [rad]
+    //マスク角 [rad] <- これは衛星ごとに異なることが想定されるのでiniファイルとかで指定すべきでは？
     const double mask_angle = 10.0/180.0*M_PI;
 
     std::random_device seed_gen;

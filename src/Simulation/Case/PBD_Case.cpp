@@ -90,6 +90,7 @@ void PBD_Case::Main()
     // Spacecraft Update
     for (auto& spacecraft : spacecrafts_)
     {
+      // ŽÀÛ‚Í‚±‚±‚Ì’†‚ÅGNSSŠÏ‘ªî•ñ‚ÌXV‚ð‚µ‚½‚¢D
       spacecraft->Update(&(glo_env_->GetSimTime()));
       spacecraft->Clear(); //Zero clear force and torque for dynamics
     }

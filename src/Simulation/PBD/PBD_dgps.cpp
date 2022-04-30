@@ -110,8 +110,8 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     L2_bias.at(i).assign(num_of_gnss_satellites, 0.0);
   }
   common_observed_status.assign(num_of_gnss_satellites, false);
-  for (int i = 0; i < num_of_gnss_channel; ++i) main_free_ch.push_back(i);
-  for (int i = 0; i < num_of_gnss_channel; ++i) common_free_ch.push_back(i);
+  // for (int i = 0; i < num_of_gnss_channel; ++i) main_free_ch.push_back(i);
+  // for (int i = 0; i < num_of_gnss_channel; ++i) common_free_ch.push_back(i);
 
   ofstream ofs_ini_txt("readme_new.txt");
   ofs_ini_txt << "initial position dist: " << sigma_r_ini << endl;
@@ -143,7 +143,7 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
 {
   //clock //仮
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
-  // これがほんまはrandom walkでモデル化しないといけないのでは？
+  // これがほんまはrandom walkでモデル化しないといけないのでは？というかclockバイアスしか渡してないが，これはGnssSatellitesクラスの仕様的にしょうがない．
   sat_main_clock_true = receiver_clock_dist(mt); // main
   sat_target_clock_true = receiver_clock_dist(mt); // target
 
@@ -156,13 +156,14 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
 
   if(abs(elapsed_time - tmp*observe_step_time) < step_time/2.0){
     //観測時間にピッタリ
-    GnssObservedValues gnss_observed_values_main;
+    GnssObservedValues gnss_observed_values_main; // ここで毎回生成するのはメモリ的に非効率では？
     GnssObservedValues gnss_true_main;
     GetGnssPositionObservation(gnss_satellites_, main_orbit_, 0, gnss_observed_values_main, gnss_true_main, sat_main_clock_true);
     // Ionfreeを生成している．
     ProcessGnssObservation(gnss_observed_values_main, gnss_true_main, 0);
     GnssObservedValues gnss_observed_values_target;
     GnssObservedValues gnss_true_target;
+    // ここが外部から通信されてきて受け取る情報になる．
     GetGnssPositionObservation(gnss_satellites_, target_orbit_, 1, gnss_observed_values_target, gnss_true_target, sat_target_clock_true);
     ProcessGnssObservation(gnss_observed_values_target, gnss_true_target, 1);
 
@@ -836,18 +837,18 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
     observe_info.at(sat_id).now_observed_gnss_sat_id.clear(); //クリア
 
     for(int i = 0; i < num_of_gnss_satellites; ++i){
-        //if(i == 7 || i == 23 || i == 31) continue;
+        //if(i == 7 || i == 23 || i == 31) continue; 　←この衛星たちの軌道情報が悪いからこうしていたのか？
         if(!gnss_satellites_.GetWhetherValid(i)) continue;
         libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(i);
         bool see_flag = CheckCanSeeSatellite(sat_position_i, gnss_position);
         // init
-        main_index_dict.insert(std::make_pair(i, -1));
-        common_index_dict.insert(std::make_pair(i, -1));
+        // main_index_dict.insert(std::make_pair(i, -1));
+        // common_index_dict.insert(std::make_pair(i, -1));
 
         int gnss_sat_id = i;
         if (!see_flag)
         {
-          pre_main_observing_ch = now_main_observing_ch;
+          // pre_main_observing_ch = now_main_observing_ch;
           //RemoveFromCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
           continue;
         }
@@ -856,8 +857,8 @@ void PBD_dgps::GetGnssPositionObservation(const GnssSatellites& gnss_satellites_
         int observed_gnss_index = observe_info.at(sat_id).now_observed_gnss_sat_id.size() - 1;
         if (sat_id == 0)
         {
-          main_index_dict.at(gnss_sat_id) = observed_gnss_index;
-          pre_main_observing_ch = now_main_observing_ch;
+          // main_index_dict.at(gnss_sat_id) = observed_gnss_index;
+          // pre_main_observing_ch = now_main_observing_ch;
           //AllocateToCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
         }
         double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
@@ -972,6 +973,11 @@ void PBD_dgps::ProcessGnssObservation(GnssObservedValues& gnss_observed_values, 
 
 void PBD_dgps::UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda)
 {
+  const int index_main = conv_index_from_gnss_sat_id(observe_info.at(0).now_observed_gnss_sat_id, gnss_sat_id);
+  true_bias_main(index_main) = bias[0].at(gnss_sat_id) * lambda;
+  const int index_target = conv_index_from_gnss_sat_id(observe_info.at(1).now_observed_gnss_sat_id, gnss_sat_id);
+  true_bias_target(index_target) = bias[1].at(gnss_sat_id) * lambda;
+  /*
   if (now_main_observing_ch.count(gnss_sat_id))
   {
     int ch = now_main_observing_ch[gnss_sat_id];
@@ -980,8 +986,9 @@ void PBD_dgps::UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id
   if (now_common_observing_ch.count(gnss_sat_id))
   {
     int ch = now_common_observing_ch[gnss_sat_id];
-    true_bias_target(ch) = (bias[1].at(gnss_sat_id) - bias[0].at(gnss_sat_id))*lambda;
+    true_bias_target(ch) = bias[1].at(gnss_sat_id)*lambda;
   }
+  */
 };
 
 // sat_idはLEO衛星のこと
@@ -1004,13 +1011,13 @@ void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
       {
         common_observed_gnss_sat_id.push_back(gnss_sat_id);
         common_observed_status.at(gnss_sat_id) = true;
-        common_index_dict.at(gnss_sat_id) = common_index; // このindexはほんまに必要なのか？
+        // common_index_dict.at(gnss_sat_id) = common_index; // このindexはほんまに必要なのか？
         ++common_index;
-        pre_common_observing_ch = now_common_observing_ch; // ???
+        // pre_common_observing_ch = now_common_observing_ch; // ???
         //AllocateToCh(gnss_sat_id, now_common_observing_ch, common_free_ch);
         break;
       }
-      pre_common_observing_ch = now_common_observing_ch;
+      // pre_common_observing_ch = now_common_observing_ch;
       //RemoveFromCh(gnss_sat_id, now_common_observing_ch, common_free_ch);
     }
   }
