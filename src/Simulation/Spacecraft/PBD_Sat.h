@@ -2,6 +2,7 @@
 
 #include "Spacecraft.h"
 #include "PBD_Components.h"
+#include "../PBD/PBD_GnssObservation.h"
 
 class PBD_Components;
 
@@ -21,6 +22,8 @@ public:
   //ダイナミクスへの力・トルク出力
   void GenerateTorque_b();
   void GenerateForce_b();
+
+  PBD_GnssObservation& gnss_observation_;
 
 private:
   PBD_Components* components_;

@@ -57,7 +57,7 @@ void PBD_Case::InitializeSpacecrafts()
 void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), (spacecrafts_.at(0)->GetDynamics()).GetOrbit(), (spacecrafts_.at(1)->GetDynamics()).GetOrbit());
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), (spacecrafts_.at(0)->GetDynamics()).GetOrbit(), (spacecrafts_.at(1)->GetDynamics()).GetOrbit(), spacecrafts_.at(0)->gnss_observation_, spacecrafts_.at(1)->gnss_observation_);
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
   rel_info_->LogSetup(*(sim_config_.main_logger_));

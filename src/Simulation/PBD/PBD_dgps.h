@@ -33,23 +33,17 @@ class PBD_dgps
       Eigen::VectorXd bias; // [m] ambiguityと書く方がいい？
     };
 
-    PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit);
+    PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_obaservation, PBD_GnssObservation& target_obaservation); // OrbitとGnssObservation同時に取得したい．
     ~PBD_dgps();
     void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
     void OrbitPropagation();
-    void GetGnssPositionObservation(const GnssSatellites& gnss_satellites_, const Orbit& orbit_, const int sat_id, GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, double sat_clock_true);
-    void ProcessGnssObservation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id);
-    void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, GnssObservedValues gnss_observed, GnssObservedValues gnss_true);
+    void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
     // そもそもこれをpublicにしている理由がないか．
     void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est);
     //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
-    void KalmanFilter(const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target);
+    void KalmanFilter();
     void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
     void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
-
-    //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
-    bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
-
     std::ofstream ofs;
 
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -80,24 +74,16 @@ class PBD_dgps
 
     // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
-    struct ObserveInfo
+    vector<PBD_GnssObservation&> gnss_observations_;
+
+    struct GnssObserveModel
     {
-      // {gnss_sat_id: true/false, ...}
-      vector<bool> pre_observed_status{};
-      vector<bool> now_observed_status{};
-      // {index: gnss_sat_id} index means the position in the state variables
-      vector<int> pre_observed_gnss_sat_id{};
-      vector<int> now_observed_gnss_sat_id{};
-      // {index: info}
       vector<double> geometric_range{};
       vector<double> pseudo_range_model{};
       vector<double> carrier_phase_range_model{};
     };
 
-    // この形意味ないので修正する．
-    ObserveInfo observe_info_main;
-    ObserveInfo observe_info_target;
-    vector<ObserveInfo> observe_info{};
+    vector<GnssObserveModel&> gnss_observed_models_;
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．
@@ -113,11 +99,6 @@ class PBD_dgps
     vector<int> main_free_ch{};
     vector<int> common_free_ch{};
     */
-
-    // これがこのクラスにあるのもおかしい．推定している部分とは分ける．
-    vector<vector<double>> L1_bias{ {},{} };
-    vector<vector<double>> L2_bias{ {},{} };
-    int num_of_gnss_satellites;
 
     // air drag balistic coeficient
     const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一定でいいか．
@@ -150,19 +131,17 @@ class PBD_dgps
     void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda);
-    void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, const GnssObservedValues& gnss_observed_val, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
-    void UpdateObservationsSDCP(const int gnss_sat_id, const GnssObservedValues& gnss_observed_main, const GnssObservedValues& gnss_observed_target, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+    void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+    void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
     void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch);
     void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch);
 
+    int num_of_gnss_satellites_;
 
-    //clockの真値[m]
-    double sat_main_clock_true;
-    double sat_target_clock_true;
-
-    //マスク角 [rad] <- これは衛星ごとに異なることが想定されるのでiniファイルとかで指定すべきでは？
-    const double mask_angle = 10.0/180.0*M_PI;
+    // receiver clock biasの真値[m] <- これはログ用にしか使ってないからイランかも
+    const double& receiver_clock_bias_main_;
+    const double& receiver_clock_bias_target_;
 
     std::random_device seed_gen;
     std::mt19937 mt;

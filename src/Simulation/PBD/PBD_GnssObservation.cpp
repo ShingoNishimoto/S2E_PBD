@@ -16,28 +16,33 @@ bool GnssObservedValues::check_normal()
     return true;
 }
 
-PBD_GnssObservation::PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites) : orbit_(orbit), gnss_satellites_(gnss_satellites), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites())
+PBD_GnssObservation::PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites) : orbit_(orbit), gnss_satellites_(gnss_satellites)
 {
+  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites();
   // 初期化
-  gnss_observe_info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
-  gnss_observe_info_.now_observed_status.assign(num_of_gnss_satellites_, false);
+  info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
+  info_.now_observed_status.assign(num_of_gnss_satellites_, false);
+  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
+  receiver_clock_bias_ = receiver_clock_dist(mt);
 }
 
 PBD_GnssObservation::~PBD_GnssObservation() {}
 
-void PBD_GnssObservation::Update(double sat_clock_true)
+void PBD_GnssObservation::Update()
 {
-
+  // receiver clock
+  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
+  receiver_clock_bias_ = receiver_clock_dist(mt);
+  UpdateGnssObservation();
 }
 
-void PBD_GnssObservation::GetGnssPositionObservation(const double sat_clock_true)
+void PBD_GnssObservation::UpdateGnssObservation()
 {
   //推定値の計算
-  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 更新
+  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 更新 <- ?
   libra::Vector<3> sat_position_i = orbit_.GetSatPosition_i(); // ECI
 
-  // この観測している衛星群の情報更新とかはここでした方がいいな．．．
-  gnss_observe_info_.now_observed_gnss_sat_id.clear(); //クリア
+  info_.now_observed_gnss_sat_id.clear(); //クリア
 
   for (int gnss_sat_id = 0; gnss_sat_id < num_of_gnss_satellites_; ++gnss_sat_id) {
     //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; 　←この衛星たちの軌道情報が悪いからこうしていたのか？
@@ -54,34 +59,36 @@ void PBD_GnssObservation::GetGnssPositionObservation(const double sat_clock_true
       // RemoveFromCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
       continue;
     }
-    observe_info.at(sat_id).now_observed_status.at(gnss_sat_id) = true;
-    observe_info.at(sat_id).now_observed_gnss_sat_id.push_back(gnss_sat_id);
-    int observed_gnss_index = observe_info.at(sat_id).now_observed_gnss_sat_id.size() - 1;
+    info_.now_observed_status.at(gnss_sat_id) = true;
+    info_.now_observed_gnss_sat_id.push_back(gnss_sat_id);
+    int observed_gnss_index = info_.now_observed_gnss_sat_id.size() - 1;
+    /*
     if (sat_id == 0)
     {
       // main_index_dict.at(gnss_sat_id) = observed_gnss_index;
       // pre_main_observing_ch = now_main_observing_ch;
       //AllocateToCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
     }
+    */
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
-    double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, sat_clock_true, L1_frequency);
-    double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, sat_clock_true, L2_frequency);
-    auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, sat_clock_true, L1_frequency);
-    auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, sat_clock_true, L2_frequency);
+    double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
+    double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
+    auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
+    auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
 
     double ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
     double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * (l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda * (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
 
-    gnss_true_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
-    gnss_true_values_.gnss_satellites_position.push_back(gnss_position);
-    gnss_true_values_.gnss_clock.push_back(gnss_clock);
-    gnss_true_values_.L1_pseudo_range.push_back(l1_pseudo_range);
-    gnss_true_values_.L2_pseudo_range.push_back(l2_pseudo_range);
-    gnss_true_values_.L1_carrier_phase.push_back(l1_carrier_phase);
-    gnss_true_values_.L2_carrier_phase.push_back(l2_carrier_phase);
+    true_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
+    true_values_.gnss_satellites_position.push_back(gnss_position);
+    true_values_.gnss_clock.push_back(gnss_clock);
+    true_values_.L1_pseudo_range.push_back(l1_pseudo_range);
+    true_values_.L2_pseudo_range.push_back(l2_pseudo_range);
+    true_values_.L1_carrier_phase.push_back(l1_carrier_phase);
+    true_values_.L2_carrier_phase.push_back(l2_carrier_phase);
 
-    gnss_true_values_.ionfree_pseudo_range.push_back(ionfree_range);
-    gnss_true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+    true_values_.ionfree_pseudo_range.push_back(ionfree_range);
+    true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
 
     // 観測情報の方には観測誤差を混ぜる
     std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
@@ -100,23 +107,91 @@ void PBD_GnssObservation::GetGnssPositionObservation(const double sat_clock_true
     ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
     ionfree_phase = L2_lambda * (L1_frequency / L2_frequency * (l1_carrier_phase.first + l1_carrier_phase.second) - (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
 
-    gnss_observed_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
-    gnss_observed_values_.gnss_satellites_position.push_back(gnss_position);
-    gnss_observed_values_.gnss_clock.push_back(gnss_clock);
-    gnss_observed_values_.L1_pseudo_range.push_back(l1_pseudo_range);
-    gnss_observed_values_.L2_pseudo_range.push_back(l2_pseudo_range);
-    gnss_observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
-    gnss_observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
+    observed_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
+    observed_values_.gnss_satellites_position.push_back(gnss_position);
+    observed_values_.gnss_clock.push_back(gnss_clock);
+    observed_values_.L1_pseudo_range.push_back(l1_pseudo_range);
+    observed_values_.L2_pseudo_range.push_back(l2_pseudo_range);
+    observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
+    observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
 
-    gnss_observed_values_.ionfree_pseudo_range.push_back(ionfree_range);
-    gnss_observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+    observed_values_.ionfree_pseudo_range.push_back(ionfree_range);
+    observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
   }
 }
 
 
 bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
 {
+  // ここには姿勢の要素も入れなければいけない．
   double angle_rad = angle(satellite_position, gnss_position - satellite_position);
   if (angle_rad < M_PI / 2.0 - mask_angle) return true;
   else return false;
+}
+
+// ionfreeの計算をしている．
+void PBD_GnssObservation::CalcIonfreeObservation()
+{
+  int observed_gnss_index = 0;
+  for (int i = 0; i < num_of_gnss_satellites_; ++i)
+  {
+    if (info_.pre_observed_status.at(i) == true && info_.now_observed_status.at(i) == false)
+    {
+      l1_bias_.at(i) = 0.0;
+      l2_bias_.at(i) = 0.0;
+    }
+    else if (info_.pre_observed_status.at(i) == false && info_.now_observed_status.at(i) == true)
+    {
+      // (first + second)*lambda から真の距離引いてそこからbias求める．ここから！！！！！！！！！！！！！！！！！！！！！ そのまま真の距離引いたら0になるからここでの真の距離は時刻を使う．時刻の精度以下に埋もれる部分が整数不定性として出てくる？伝搬時間も必要やん．
+      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // これじゃダメ．あまり分のbiasを求めないと．あんま関係ない気がするので後で対応する．
+      // これがどのchに対応しているかはわかっている．
+      l2_bias_.at(i) = true_values_.L2_carrier_phase.at(observed_gnss_index).second;
+    }
+    if (info_.now_observed_status.at(i)) ++observed_gnss_index;
+  }
+
+  for (int i = 0; i < true_values_.observable_gnss_sat_id.size(); ++i)
+  {
+    int gnss_sat_id = true_values_.observable_gnss_sat_id.at(i);
+
+    auto L1_observed = true_values_.L1_carrier_phase.at(i);
+    L1_observed.first += L1_observed.second - l1_bias_.at(gnss_sat_id);
+
+    auto L2_observed = true_values_.L2_carrier_phase.at(i);
+    L2_observed.first += L2_observed.second - l2_bias_.at(gnss_sat_id);
+
+    double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * L1_observed.first - L2_lambda * L2_observed.first) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
+    true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+  }
+
+  for (int i = 0; i < observed_values_.observable_gnss_sat_id.size(); ++i)
+  {
+    int gnss_sat_id = observed_values_.observable_gnss_sat_id.at(i);
+
+    auto L1_observed = observed_values_.L1_carrier_phase.at(i);
+    L1_observed.first += L1_observed.second - l1_bias_.at(gnss_sat_id);
+
+    auto L2_observed = observed_values_.L2_carrier_phase.at(i);
+    L2_observed.first += L2_observed.second - l2_bias_.at(gnss_sat_id);
+
+    double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * L1_observed.first - L2_lambda * L2_observed.first) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
+    observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+  }
+  return;
+}
+
+// この関数は外部で呼ばれて，内部が変更される．．．
+void PBD_GnssObservation::UpdateInfoAfterObserved()
+{
+  // update observation state info
+  for (int i = 0; i < num_of_gnss_satellites_; ++i)
+  {
+    // ここの操作はconstなのでできない．これはUpdate関数の初期部分に移行すればいい？
+    info_.pre_observed_status.at(i) = info_.now_observed_status.at(i);
+    info_.now_observed_status.at(i) = false;
+  }
+  info_.pre_observed_gnss_sat_id.clear();
+  for (auto x : info_.now_observed_gnss_sat_id) info_.pre_observed_gnss_sat_id.push_back(x);
+
+  return;
 }

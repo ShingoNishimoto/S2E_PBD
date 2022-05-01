@@ -4,10 +4,14 @@
 #include <vector>
 #include <utility>
 #include <random>
+#define _USE_MATH_DEFINES
+#include <cmath>
 #include "Vector.hpp"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 
+
+// このクラスは受信機クラスか何かに拡張する．
 struct GnssObservedValues
 {
   std::vector<int> observable_gnss_sat_id;
@@ -34,26 +38,37 @@ struct GnssObserveInfo
   vector<int> pre_observed_gnss_sat_id{};
   vector<int> now_observed_gnss_sat_id{};
   // {index: info}
-  vector<double> geometric_range{};
-  vector<double> pseudo_range_model{};
-  vector<double> carrier_phase_range_model{};
+  // 以下はモデルで計算するものなのでここではない．
+  // vector<double> geometric_range{};
+  // vector<double> pseudo_range_model{};
+  // vector<double> carrier_phase_range_model{};
 };
 
+
+// 普通にアクセスするよりGetter,使ってした方がいい．
 class PBD_GnssObservation
 {
 public:
   PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites);
   ~PBD_GnssObservation();
 
-  void Update(double sat_clock_true);
-  void GetGnssPositionObservation(const double sat_clock_true); // getじゃない方がいいかも？
-  void ProcessGnssObservation();
-  void SetBiasToObservation();
+  void Update();
+  void UpdateGnssObservation();
+  void CalcIonfreeObservation();
+  void UpdateInfoAfterObserved();
 
-  static GnssObservedValues gnss_true_values_; // trueは要らんかも
-  static GnssObservedValues gnss_observed_values_;
-  static GnssObserveInfo gnss_observe_info_;
-  static int num_of_gnss_satellites_;
+  static GnssObservedValues true_values_; // trueは要らんかも
+  static GnssObservedValues observed_values_;
+  static GnssObserveInfo info_;
+  static int num_of_gnss_satellites_; // というかこれはここに要らんのでは？
+  vector<double> l1_bias_{};
+  vector<double> l2_bias_{};
+
+  // receiver clock biasの真値[m]
+  double receiver_clock_bias_;
+
+  //マスク角 [rad] <- これは衛星ごとに異なることが想定されるのでiniファイルとかで指定すべきでは？
+  const double mask_angle = 10.0 / 180.0 * M_PI;
 
 private:
   const Orbit& orbit_;
@@ -62,7 +77,7 @@ private:
   bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
 
   // std::random_device seed_gen;
-  // std::mt19937 mt;
+  std::mt19937 mt;
 };
 
 

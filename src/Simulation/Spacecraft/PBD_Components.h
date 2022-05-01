@@ -33,6 +33,7 @@ public:
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
 
 private:
+  // この構成はなんか変な気がするな．．
   // Sat0
   OBC_Sat0* obc0_;
   RFSystemTransmitter* rf_sys_transmitter_;
