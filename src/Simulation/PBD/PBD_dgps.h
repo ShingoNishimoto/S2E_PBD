@@ -19,62 +19,62 @@
 
 class PBD_dgps
 {
-  public:
-    struct EstimatedVariables
-    {
-      //[x[m], y[m], z[m]]
-      Eigen::Vector3d position;
-      // [cdt[m]]
-      Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうる．
-      //[vx[m/s], vy[m/s], vz[m/s]]
-      Eigen::Vector3d velocity;
-      //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
-      Eigen::Vector3d acceleration; // 経験加速度
-      Eigen::VectorXd bias; // [m] ambiguityと書く方がいい？
-    };
+public:
+  struct EstimatedVariables
+  {
+    //[x[m], y[m], z[m]]
+    Eigen::Vector3d position;
+    // [cdt[m]]
+    Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうる．
+    //[vx[m/s], vy[m/s], vz[m/s]]
+    Eigen::Vector3d velocity;
+    //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
+    Eigen::Vector3d acceleration; // 経験加速度
+    Eigen::VectorXd bias; // [m] ambiguityと書く方がいい？
+  };
 
-    PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_obaservation, PBD_GnssObservation& target_obaservation); // OrbitとGnssObservation同時に取得したい．
-    ~PBD_dgps();
-    void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
-    void OrbitPropagation();
-    void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
-    // そもそもこれをpublicにしている理由がないか．
-    void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est);
-    //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
-    void KalmanFilter();
-    void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
-    void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
-    std::ofstream ofs;
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation); // OrbitとGnssObservation同時に取得したい．
+  ~PBD_dgps();
+  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
+  void OrbitPropagation();
+  void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
+  // そもそもこれをpublicにしている理由がないか．
+  void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est);
+  //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
+  void KalmanFilter();
+  void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
+  void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
+  std::ofstream ofs;
 
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  private:
-    // 複数衛星に拡張するのならorbitsにした方がいい．
-    // main satellite
-    const Orbit& main_orbit_;
-    // target satellite
-    const Orbit& target_orbit_;
-    
-    EstimatedVariables x_est_main;
-    EstimatedVariables x_est_target;
+private:
+  // 複数衛星に拡張するのならorbitsにした方がいい．
+  // main satellite
+  const Orbit& main_orbit_;
+  // target satellite
+  const Orbit& target_orbit_;
 
-    Eigen::VectorXd true_bias_main;
+  EstimatedVariables x_est_main;
+  EstimatedVariables x_est_target;
 
-    // std::map<const int, int> main_index_dict;
+  Eigen::VectorXd true_bias_main;
 
-    // 辞書が欲しい commonとmainをつなげるために
-    Eigen::VectorXd true_bias_target; // [m]
+  // std::map<const int, int> main_index_dict;
 
-    // std::map<const int, int> common_index_dict;
-    
-    // Eigen::VectorXd x_true; // 状態量真値 for log
-    // シンプルにここが参照になっていないからか．
-    vector<EstimatedVariables> x_est{}; // 状態量ベクトル
-    // ここを参照にしていたのが原因だった． vector内部をこれはでも大丈夫なのか？
+  // 辞書が欲しい commonとmainをつなげるために
+  Eigen::VectorXd true_bias_target; // [m]
 
-    // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
+  // std::map<const int, int> common_index_dict;
 
-    vector<PBD_GnssObservation&> gnss_observations_;
+  // Eigen::VectorXd x_true; // 状態量真値 for log
+  // シンプルにここが参照になっていないからか．
+  vector<EstimatedVariables> x_est{}; // 状態量ベクトル
+  // ここを参照にしていたのが原因だった． vector内部をこれはでも大丈夫なのか？
+
+  // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
+
+  vector<PBD_GnssObservation> gnss_observations_;
 
     struct GnssObserveModel
     {
@@ -83,7 +83,7 @@ class PBD_dgps
       vector<double> carrier_phase_range_model{};
     };
 
-    vector<GnssObserveModel&> gnss_observed_models_;
+    vector<GnssObserveModel> gnss_observed_models_{}; //なぜここでの初期化が必要なのか?あと普通に参照型であれば無理なのはなぜ？
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．

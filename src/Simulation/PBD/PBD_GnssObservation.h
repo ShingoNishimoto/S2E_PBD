@@ -57,10 +57,10 @@ public:
   void CalcIonfreeObservation();
   void UpdateInfoAfterObserved();
 
-  static GnssObservedValues true_values_; // trueは要らんかも
-  static GnssObservedValues observed_values_;
-  static GnssObserveInfo info_;
-  static int num_of_gnss_satellites_; // というかこれはここに要らんのでは？
+  GnssObservedValues true_values_; // trueは要らんかも
+  GnssObservedValues observed_values_;
+  GnssObserveInfo info_;
+  int num_of_gnss_satellites_; // というかこれはここに要らんのでは？
   vector<double> l1_bias_{};
   vector<double> l2_bias_{};
 

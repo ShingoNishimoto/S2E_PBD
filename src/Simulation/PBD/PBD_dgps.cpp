@@ -14,15 +14,15 @@
 static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_obaservation, PBD_GnssObservation& target_obaservation):mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_obaservation.receiver_clock_bias_), receiver_clock_bias_target_(target_obaservation.receiver_clock_bias_)
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_)
 {
   //初期化
   x_est_main.position = Eigen::VectorXd::Zero(3);
   libra::Vector<3> position_main = main_orbit_.GetSatPosition_i();
-  for(int i = 0;i < 3;++i) x_est_main.position(i) = position_main[i];
+  for (int i = 0; i < 3; ++i) x_est_main.position(i) = position_main[i];
   x_est_main.clock = Eigen::VectorXd::Zero(1);
   libra::Vector<3> velocity_main = main_orbit_.GetSatVelocity_i();
-  for(int i = 0;i < 3;++i) x_est_main.velocity(i) = velocity_main[i];
+  for (int i = 0; i < 3; ++i) x_est_main.velocity(i) = velocity_main[i];
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.bias = Eigen::VectorXd::Zero(num_of_gnss_channel);
 
@@ -35,22 +35,16 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.bias = Eigen::VectorXd::Zero(num_of_gnss_channel);
 
-  // x_est = { x_est_main, x_est_target };
-  // ここはpush_backで問題なかったっポイ
-  //x_est.reserve(2);
   x_est.push_back(x_est_main);
   x_est.push_back(x_est_target);
-  //x_est.at(0) = x_est_main;
-  //x_est.at(1) = x_est_target;
+  // vector<PBD_GnssObservation&> gnss_observations_{ main_observation , target_observation }
+  gnss_observations_.push_back(main_observation);
+  gnss_observations_.push_back(target_observation);
 
-  gnss_observations_.push_back(main_obaservation);
-  gnss_observations_.push_back(target_obaservation);
-
-  GnssObserveModel main_model;
-  GnssObserveModel target_model;
+  GnssObserveModel main_model{};
+  GnssObserveModel target_model{};
   gnss_observed_models_.push_back(main_model);
   gnss_observed_models_.push_back(target_model);
-  // observe_info.reserve(2);
   
   true_bias_main = Eigen::VectorXd::Zero(num_of_gnss_channel);
   true_bias_target = Eigen::VectorXd::Zero(num_of_gnss_channel);
@@ -147,8 +141,11 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
   //観測時間にピッタリ
   if(abs(elapsed_time - tmp*observe_step_time) < step_time/2.0){
 
-    SetBiasToObservation(0, x_est_main, gnss_observations_.at(0));
-    SetBiasToObservation(1, x_est_target, gnss_observations_.at(1));
+    // ここの引数をどう渡すかとかが関係している？
+    PBD_GnssObservation& main_observation_ = gnss_observations_.at(0);
+    SetBiasToObservation(0, x_est_main, main_observation_);
+    PBD_GnssObservation& target_observation_ = gnss_observations_.at(1);
+    SetBiasToObservation(1, x_est_target, target_observation_);
     // ここでinfoの更新がしたい．
     KalmanFilter();
   }

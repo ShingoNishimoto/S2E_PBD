@@ -33,6 +33,7 @@ void PBD_GnssObservation::Update()
   // receiver clock
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
   receiver_clock_bias_ = receiver_clock_dist(mt);
+  // ‚±‚±‚Å–ˆ‰ñŒÄ‚Ô‚Æ‹O“¹î•ñ‚ªXV‚³‚ê‚Ä‚È‚­‚Ä€‚ÊD
   UpdateGnssObservation();
 }
 
