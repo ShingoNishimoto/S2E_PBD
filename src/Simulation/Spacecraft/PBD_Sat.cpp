@@ -4,9 +4,10 @@
 
 
 PBD_Sat::PBD_Sat(SimulationConfig* sim_config, const GlobalEnvironment* glo_env, RelativeInformation* rel_info, PBD_InterSatComm* pbd_inter_sat_comm, const int sat_id)
-:Spacecraft(sim_config, glo_env, rel_info, sat_id), gnss_observation_(PBD_GnssObservation(this->GetDynamics().GetOrbit(), glo_env->GetGnssSatellites()))
+:Spacecraft(sim_config, glo_env, rel_info, sat_id)//, gnss_observation_(PBD_GnssObservation(this->GetDynamics().GetOrbit(), glo_env->GetGnssSatellites()))
 {
   Initialize(sim_config, glo_env, pbd_inter_sat_comm, sat_id);
+  gnss_observation_ = new PBD_GnssObservation(this->GetDynamics().GetOrbit(), glo_env->GetGnssSatellites());
 }
 
 PBD_Sat::~PBD_Sat()
@@ -40,7 +41,7 @@ void PBD_Sat::Update(const SimTime* sim_time)
   GenerateForce_b();
 
   // この更新を毎回すると計算は重そうだが，しょうがないか．
-  gnss_observation_.Update();
+  gnss_observation_->Update();
 }
 
 void PBD_Sat::GenerateTorque_b()

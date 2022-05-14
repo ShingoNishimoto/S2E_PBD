@@ -23,7 +23,7 @@ public:
   void GenerateTorque_b();
   void GenerateForce_b();
 
-  PBD_GnssObservation& gnss_observation_;
+  PBD_GnssObservation* gnss_observation_;
 
 private:
   PBD_Components* components_;

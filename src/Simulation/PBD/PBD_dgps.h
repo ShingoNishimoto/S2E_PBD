@@ -70,20 +70,19 @@ private:
   // Eigen::VectorXd x_true; // 状態量真値 for log
   // シンプルにここが参照になっていないからか．
   vector<EstimatedVariables> x_est{}; // 状態量ベクトル
-  // ここを参照にしていたのが原因だった． vector内部をこれはでも大丈夫なのか？
 
   // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
-  vector<PBD_GnssObservation> gnss_observations_;
+  vector<PBD_GnssObservation*> gnss_observations_;
 
     struct GnssObserveModel
     {
-      vector<double> geometric_range{};
-      vector<double> pseudo_range_model{};
-      vector<double> carrier_phase_range_model{};
+      vector<double> geometric_range;
+      vector<double> pseudo_range_model;
+      vector<double> carrier_phase_range_model;
     };
 
-    vector<GnssObserveModel> gnss_observed_models_{}; //なぜここでの初期化が必要なのか?あと普通に参照型であれば無理なのはなぜ？
+    vector<GnssObserveModel*> gnss_observed_models_; // = { &main_model, &target_model }; //なぜここでの初期化が必要なのか?あと普通に参照型であれば無理なのはなぜ？
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．
