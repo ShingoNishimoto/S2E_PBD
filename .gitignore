@@ -2,6 +2,9 @@
 CMakeBuilds/
 .vs/
 
+# VSCode
+.vscode/
+
 # Log files
 data/logs/
 
