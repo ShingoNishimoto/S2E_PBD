@@ -11,7 +11,7 @@
 #define CHOLESKY (0)
 #define QR (1)
 
-static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, const int gnss_sat_id);
+static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
 PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({main_observation, target_observation})
@@ -37,7 +37,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 
   x_est.push_back(x_est_main);
   x_est.push_back(x_est_target);
-  // vector<PBD_GnssObservation&> gnss_observations_{ main_observation , target_observation }
+  // std::vector<PBD_GnssObservation&> gnss_observations_{ main_observation , target_observation }
   // ここは関係ない？
   // gnss_observations_.push_back(main_observation);
   // gnss_observations_.push_back(target_observation);
@@ -104,28 +104,28 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   // for (int i = 0; i < num_of_gnss_channel; ++i) main_free_ch.push_back(i);
   // for (int i = 0; i < num_of_gnss_channel; ++i) common_free_ch.push_back(i);
 
-  ofstream ofs_ini_txt("readme_new.txt");
-  ofs_ini_txt << "initial position dist: " << sigma_r_ini << endl;
-  ofs_ini_txt << "initial velocity dist: " << sigma_v_ini << endl;
-  ofs_ini_txt << "initial acceleration dist: " << sigma_acc_r_ini << endl;
-  ofs_ini_txt << "initial clock dist: " << sigma_cdt_ini << endl;
-  ofs_ini_txt << "initial ambiguity dist: " << sigma_N_ini << endl;
-  ofs_ini_txt << "pseudo dist: " << pseudo_sigma << endl;
-  ofs_ini_txt << "carrier dist: " << carrier_sigma << endl;
-  ofs_ini_txt << "clock dist: " << clock_sigma << endl;
-  ofs_ini_txt << "process noise of position: " << sigma_r_process << endl;
-  ofs_ini_txt << "process noise of velocity: " << sigma_v_process << endl;
-  ofs_ini_txt << "process noise of radial acceleration: " << sigma_acc_r_process << endl;
-  ofs_ini_txt << "process noise of tangential acceleration: " << sigma_acc_t_process << endl;
-  ofs_ini_txt << "process noise of north acceleration: " << sigma_acc_n_process << endl;
-  ofs_ini_txt << "process noise of clock: " << sigma_cdt_process << endl;
-  ofs_ini_txt << "process noise of ambiguity: " << sigma_N_process << endl;
-  ofs_ini_txt << "time const. acceleration: " << tau_a << endl;
-  ofs_ini_txt << "time const. clock: " << tau_cdt << endl;
-  ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << endl; // FIXME
-  ofs_ini_txt << "num of status: " << num_of_status << endl;
-  ofs_ini_txt << "observe step time: " << observe_step_time << endl;
-  ofs_ini_txt << "log step time: " << log_step_time << endl;
+  std::ofstream ofs_ini_txt("readme_new.txt");
+  ofs_ini_txt << "initial position dist: " << sigma_r_ini << std::endl;
+  ofs_ini_txt << "initial velocity dist: " << sigma_v_ini << std::endl;
+  ofs_ini_txt << "initial acceleration dist: " << sigma_acc_r_ini << std::endl;
+  ofs_ini_txt << "initial clock dist: " << sigma_cdt_ini << std::endl;
+  ofs_ini_txt << "initial ambiguity dist: " << sigma_N_ini << std::endl;
+  ofs_ini_txt << "pseudo dist: " << pseudo_sigma << std::endl;
+  ofs_ini_txt << "carrier dist: " << carrier_sigma << std::endl;
+  ofs_ini_txt << "clock dist: " << clock_sigma << std::endl;
+  ofs_ini_txt << "process noise of position: " << sigma_r_process << std::endl;
+  ofs_ini_txt << "process noise of velocity: " << sigma_v_process << std::endl;
+  ofs_ini_txt << "process noise of radial acceleration: " << sigma_acc_r_process << std::endl;
+  ofs_ini_txt << "process noise of tangential acceleration: " << sigma_acc_t_process << std::endl;
+  ofs_ini_txt << "process noise of north acceleration: " << sigma_acc_n_process << std::endl;
+  ofs_ini_txt << "process noise of clock: " << sigma_cdt_process << std::endl;
+  ofs_ini_txt << "process noise of ambiguity: " << sigma_N_process << std::endl;
+  ofs_ini_txt << "time const. acceleration: " << tau_a << std::endl;
+  ofs_ini_txt << "time const. clock: " << tau_cdt << std::endl;
+  ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << std::endl; // FIXME
+  ofs_ini_txt << "num of status: " << num_of_status << std::endl;
+  ofs_ini_txt << "observe step time: " << observe_step_time << std::endl;
+  ofs_ini_txt << "log step time: " << log_step_time << std::endl;
 }
 
 PBD_dgps::~PBD_dgps(){}
@@ -160,27 +160,27 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
   if(abs(elapsed_time - tmp_log*log_step_time) < step_time/2.0){
     libra::Vector<3> sat_position = main_orbit_.GetSatPosition_i();
     libra::Vector<3> sat_velocity = main_orbit_.GetSatVelocity_i();
-    for(int i = 0;i < 3;++i) ofs << fixed << setprecision(30) << sat_position[i] << ","; // r_m_true
-    ofs << fixed << setprecision(30) << receiver_clock_bias_main_ << ","; // t_m_true
-    for(int i = 0;i < 3;++i) ofs << fixed << setprecision(30) << sat_velocity[i] << ","; // v_m_ture
+    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << sat_position[i] << ","; // r_m_true
+    ofs << std::fixed << std::setprecision(30) << receiver_clock_bias_main_ << ","; // t_m_true
+    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << sat_velocity[i] << ","; // v_m_ture
     libra::Vector<3> sat_position_target = target_orbit_.GetSatPosition_i();
     libra::Vector<3> sat_velocity_target = target_orbit_.GetSatVelocity_i();
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << sat_position_target[i] << ","; // r_t_ture
-    ofs << fixed << setprecision(30) << receiver_clock_bias_target_ << ","; // t_t_true
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << sat_velocity_target[i] << ","; // v_t_ture
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << x_est_main.position(i) << ","; // r_m_est
-    ofs << fixed << setprecision(30) << x_est_main.clock(0) << ","; // t_m_est
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << x_est_main.velocity(i) << ","; // v_m_est
-    for(int i = 0;i < 3;++i) ofs << fixed << setprecision(30) << x_est_main.acceleration(i) << ","; // a_m_est
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << x_est_target.position(i) << ","; // r_t_est
-    ofs << fixed << setprecision(30) << x_est_target.clock(0) << ","; //t_t_est
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << x_est_target.velocity(i) << ","; // v_t_est
-    for (int i = 0; i < 3; ++i) ofs << fixed << setprecision(30) << x_est_target.acceleration(i) << ","; // a_t_est
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << true_bias_main(i) << ","; // N_true
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << x_est_main.bias(i) << ","; // N_est
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << true_bias_target(i) << ","; // N_true
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << fixed << setprecision(30) << x_est_target.bias(i) << ","; // N_est
-    for (int i = 0; i < state_dimension; ++i) ofs << fixed << setprecision(30) << M(i, i) << ",";
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_position_target[i] << ","; // r_t_ture
+    ofs << std::fixed << std::setprecision(30) << receiver_clock_bias_target_ << ","; // t_t_true
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_velocity_target[i] << ","; // v_t_ture
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.position(i) << ","; // r_m_est
+    ofs << std::fixed << std::setprecision(30) << x_est_main.clock(0) << ","; // t_m_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.velocity(i) << ","; // v_m_est
+    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << x_est_main.acceleration(i) << ","; // a_m_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.position(i) << ","; // r_t_est
+    ofs << std::fixed << std::setprecision(30) << x_est_target.clock(0) << ","; //t_t_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.velocity(i) << ","; // v_t_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.acceleration(i) << ","; // a_t_est
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << true_bias_main(i) << ","; // N_true
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.bias(i) << ","; // N_est
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << true_bias_target(i) << ","; // N_true
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.bias(i) << ","; // N_est
+    for (int i = 0; i < state_dimension; ++i) ofs << std::fixed << std::setprecision(30) << M(i, i) << ",";
     // record visible gnss sat number
     /*
     int ans = 0;
@@ -188,7 +188,7 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
         auto gnss_position = gnss_satellites_.GetSatellitePositionEci(i);
         if(CheckCanSeeSatellite(sat_position, gnss_position)) ++ans;
     }
-    ofs << ans << endl;
+    ofs << ans << std::endl;
     */
     // そもそもここでログをとるのが適切ではない．
     int visible_gnss_num_main = gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
@@ -209,7 +209,7 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       if (i >= visible_gnss_num_target) ofs << -1 << ",";
       else ofs << gnss_observations_.at(1).info_.now_observed_gnss_sat_id.at(i) << ",";
     }
-    ofs << endl;
+    ofs << std::endl;
   }
 
   return;
@@ -226,11 +226,11 @@ void PBD_dgps::OrbitPropagation()
   Eigen::Vector3d acceleration_target = x_est_target.acceleration;
 
   // ここはcoreの機能を使うように修正
-  vector<Eigen::Vector3d> pos_vel_main = RK4(position_main, velocity_main, acceleration_main);
+  std::vector<Eigen::Vector3d> pos_vel_main = RK4(position_main, velocity_main, acceleration_main);
   position_main = pos_vel_main[0];
   velocity_main = pos_vel_main[1];
 
-  vector<Eigen::Vector3d> pos_vel_target = RK4(position_target, velocity_target, acceleration_target);
+  std::vector<Eigen::Vector3d> pos_vel_target = RK4(position_target, velocity_target, acceleration_target);
   position_target = pos_vel_target[0];
   velocity_target = pos_vel_target[1];
 
@@ -268,7 +268,7 @@ void PBD_dgps::OrbitPropagation()
 }
 
 // Orbitの更新を使えるように修正．位置と速度はRK4で伝搬しているのが，共分散はオイラー法になっている．EKFなので仕方がない．
-vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration)
+std::vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration)
 {
   Eigen::Vector3d k0 = PositionDifferential(velocity);
   Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration);
@@ -288,7 +288,7 @@ vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eig
   Eigen::Vector3d k3 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration);
 
-  vector<Eigen::Vector3d> position_velocity = 
+  std::vector<Eigen::Vector3d> position_velocity = 
   { position + step_time * (k0 + 2.0 * k1 + 2.0 * k2 + k3) / 6.0, 
     velocity + step_time * (l0 + 2.0 * l1 + 2.0 * l2 + l3) / 6.0 };
   return position_velocity;
@@ -528,7 +528,7 @@ void PBD_dgps::KalmanFilter()
   Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(observation_dimension, 1); // 観測誤差共分散．
   const GnssObserveInfo& main_info_ = gnss_observations_.at(0).info_;
   const GnssObserveInfo& target_info_ = gnss_observations_.at(1).info_;
-  vector<int> all_observed_gnss_ids = main_info_.now_observed_gnss_sat_id;
+  std::vector<int> all_observed_gnss_ids = main_info_.now_observed_gnss_sat_id;
   all_observed_gnss_ids.insert(all_observed_gnss_ids.end(), target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end()); // concate
   sort(all_observed_gnss_ids.begin(), all_observed_gnss_ids.end());
   all_observed_gnss_ids.erase(unique(all_observed_gnss_ids.begin(), all_observed_gnss_ids.end()), all_observed_gnss_ids.end()); // unique
@@ -536,19 +536,19 @@ void PBD_dgps::KalmanFilter()
   for (const int& id :all_observed_gnss_ids)
   {
     // if main
-    auto it_main = find(main_info_.now_observed_gnss_sat_id.begin(), main_info_.now_observed_gnss_sat_id.end(), id);
+    auto it_main = std::find(main_info_.now_observed_gnss_sat_id.begin(), main_info_.now_observed_gnss_sat_id.end(), id);
     if (it_main != main_info_.now_observed_gnss_sat_id.end() && *it_main == id)
     {
       UpdateObservationsGRAPHIC(0, x_est_main, id, z, h_x, H, R_V);
     }
     // if target
-    auto it_target = find(target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end(), id);
+    auto it_target = std::find(target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end(), id);
     if (it_target != target_info_.now_observed_gnss_sat_id.end() && *it_target == id)
     {
       UpdateObservationsGRAPHIC(1, x_est_target, id, z, h_x, H, R_V);
     }
     // if common
-    auto it_common = find(common_observed_gnss_sat_id.begin(), common_observed_gnss_sat_id.end(), id);
+    auto it_common = std::find(common_observed_gnss_sat_id.begin(), common_observed_gnss_sat_id.end(), id);
     if (it_common != common_observed_gnss_sat_id.end() && *it_common == id)
     {
       UpdateObservationsSDCP(id, z, h_x, H, R_V);
@@ -561,7 +561,7 @@ void PBD_dgps::KalmanFilter()
   /*
   if (abs(hmh.determinant()) < 10e-10)
   {
-    cout << "HMHt matirx is singular" << endl;
+    cout << "HMHt matirx is singular" << std::endl;
     abort();
   }
   */
@@ -631,7 +631,7 @@ void PBD_dgps::KalmanFilter()
 
   if (!std::isfinite(x_est_main.position(0)))
   {
-    cout << "inf or nan" << endl;
+    std::cout << "inf or nan" << std::endl;
     abort();
   }
 
@@ -731,7 +731,7 @@ void PBD_dgps::ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const i
 void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
   // ここもLEO satが把握している誤差ありの情報．
-  // find index of the observing gnss satellite
+  // std::find index of the observing gnss satellite
   const GnssObserveInfo& observe_info_ = gnss_observations_.at(sat_id).info_;
   const int index = conv_index_from_gnss_sat_id(observe_info_.now_observed_gnss_sat_id, gnss_sat_id);
   const GnssObservedValues& observed_val_ = gnss_observations_.at(sat_id).observed_values_;
@@ -770,7 +770,7 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
 
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
-  // find for comon index
+  // std::find for comon index
   const int common_index = conv_index_from_gnss_sat_id(common_observed_gnss_sat_id, gnss_sat_id);
   const int row_offset = 2 * num_of_gnss_channel + common_index;
 
@@ -807,12 +807,12 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   Rv(row_offset) = pow(sqrt(2.0) * carrier_sigma, 2.0);
 };
 
-static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, const int gnss_sat_id)
+static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id)
 {
-  vector<int>::iterator itr = find(observed_gnss_sat_id.begin(), observed_gnss_sat_id.end(), gnss_sat_id);
+  std::vector<int>::iterator itr = std::find(observed_gnss_sat_id.begin(), observed_gnss_sat_id.end(), gnss_sat_id);
   if (itr == observed_gnss_sat_id.end())
   {
-    cout << "not found" << gnss_sat_id << endl;
+    std::cout << "not found" << gnss_sat_id << std::endl;
     abort();
   }
   const int index = distance(observed_gnss_sat_id.begin(), itr);
@@ -820,7 +820,7 @@ static const int conv_index_from_gnss_sat_id(vector<int> observed_gnss_sat_id, c
 };
 
 // これは単にログ用のデータを更新しているだけ．ここでいいか．
-void PBD_dgps::UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda)
+void PBD_dgps::UpdateTrueBias(std::vector<std::vector<double>> bias, const int gnss_sat_id, const double lambda)
 {
   const int index_main = conv_index_from_gnss_sat_id(gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_sat_id);
   true_bias_main(index_main) = bias[0].at(gnss_sat_id) * lambda;
@@ -876,7 +876,7 @@ void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
 }
 
 // 空のcommon freeにアクセスして死んだ．
-void PBD_dgps::AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch)
+void PBD_dgps::AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch)
 {
   if (observing_ch.count(gnss_sat_id))
   {
@@ -889,7 +889,7 @@ void PBD_dgps::AllocateToCh(const int gnss_sat_id, std::map<const int, int>& obs
   }
 };
 
-void PBD_dgps::RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch)
+void PBD_dgps::RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch)
 {
   if (observing_ch.count(gnss_sat_id))
   {
@@ -940,7 +940,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
     {
       // if (now_index != now_index_from_sat_it.at(i))
       // {
-      //   cout << "now index something is wrong 1" << endl;
+      //   cout << "now index something is wrong 1" << std::endl;
       //   abort();
       // }
       std::normal_distribution<> N_dist(0.0, sigma_N_ini);
@@ -969,11 +969,11 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
   /*
   if (abs(M.determinant()) < 10e-13)
   {
-    cout << "M matirx is singular" << endl;
+    cout << "M matirx is singular" << std::endl;
     abort();
   }
   */
-  //cout << M << endl;
+  //cout << M << std::endl;
 }
 
 // これは観測情報を行列に入れている部分なので推定のところでするべき．
@@ -1038,7 +1038,7 @@ Eigen::VectorXd PBD_dgps::CalculateSingleDifference(const Eigen::VectorXd& main_
 }
 
 
-template <typename T> bool PBD_dgps::CheckVectorEqual(const vector<T>& a, const vector<T>& b)
+template <typename T> bool PBD_dgps::CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b)
 {
     if(a.size() != b.size()) return false;
     for(int i = 0;i < a.size();++i){

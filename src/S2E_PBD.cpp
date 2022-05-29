@@ -1,22 +1,21 @@
 
 #ifdef WIN32
 #define _WINSOCKAPI_    // stops windows.h including winsock.h
+#include <tchar.h>
 #include <windows.h>
 #endif
 
 #include <cstdio>
+#include <cstdlib>
 #include <iostream>
 #include <string>
-#include <cstdlib>
 
 // Simulator includes
-#include "Initialize.h"
-#include "Logger.h"
-#include "SimulationCase.h"
+#include "Interface/LogOutput/Logger.h"
 #include "MCSimExecutor.h"
 
 //Add custom include files
-#include "./Simulation/Case/PBD_Case.h"
+#include "Simulation/Case/PBD_Case.h"
 
 // degub print of initialize file path
 void print_path(std::string path)

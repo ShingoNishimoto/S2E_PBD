@@ -1,9 +1,9 @@
 #pragma once
 
-#include "SimulationCase.h"
-#include "MCSimExecutor.h"
+#include <SimulationCase.h>
+#include <MCSimExecutor.h>
+#include <RelativeInformation.h>
 #include "../Spacecraft/PBD_Sat.h"
-#include "RelativeInformation.h"
 #include "../InterSatComm/PBD_InterSatComm.h"
 #include "../PBD/PBD_dgps.h"
 #include "../GroundStation/PBD_GroundStation.h"
@@ -11,13 +11,13 @@
 class PBD_Case : public SimulationCase
 {
 public:
-  PBD_Case(string ini_fname);// , MCSimExecutor& mc_sim, const string log_path);
+  PBD_Case(std::string ini_fname);// , MCSimExecutor& mc_sim, const string log_path);
   virtual ~PBD_Case();
   void Initialize();
   void Main();
 
-  virtual string GetLogHeader() const;
-  virtual string GetLogValue() const;
+  virtual std::string GetLogHeader() const;
+  virtual std::string GetLogValue() const;
 
 private:
   void InitializeSpacecrafts();

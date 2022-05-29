@@ -9,7 +9,7 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
     // OBC
     obc0_ = new OBC_Sat0(clock_gen, *this);
     // RF System
-    string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_transmitter_file");
+    std::string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_transmitter_file");
     rf_sys_transmitter_ = new RFSystemTransmitter(InitRFSystemTransmitter(clock_gen, ini_path, pbd_inter_sat_comm, dynamics));
   }
   else if (sat_id_ == 1)
@@ -17,7 +17,7 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
     // OBC
     obc1_ = new OBC_Sat1(clock_gen, *this);
     // RF System
-    string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_receiver_file");
+    std::string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_receiver_file");
     rf_sys_receiver_ = new RFSystemReceiver(InitRFSystemReceiver(clock_gen, ini_path, pbd_inter_sat_comm, dynamics, &(glo_env->GetSimTime())));
   }
   else
@@ -41,20 +41,30 @@ PBD_Components::~PBD_Components()
   }
 }
 
-Vector<3> PBD_Components::GenerateForce_b()
+Vector<3> PBD_Components::GenerateForce_N_b()
 {
   //There is no orbit control component, so it remains 0
   Vector<3> force_b_(0.0);
   return force_b_;
 };
 
-Vector<3> PBD_Components::GenerateTorque_b()
+Vector<3> PBD_Components::GenerateTorque_Nm_b()
 {
   //No attitude control component
   Vector<3> torque_b_(0.0);
   return torque_b_;
 };
 
-void PBD_Components::CompoLogSetUp(Logger & logger)
+void PBD_Components::LogSetUp(Logger & logger)
 {
+  if (sat_id_ == 0)
+  {
+    // logger.AddLoggable(obc0_);
+    // logger.AddLoggable(rf_sys_transmitter_);
+  }
+  else if (sat_id_ == 1)
+  {
+    // logger.AddLoggable(obc1_);
+    // logger.AddLoggable(rf_sys_receiver_);
+  }
 }

@@ -1,10 +1,11 @@
 #include "PBD_const.h"
-#include "GnssSatellites.h"
+#include <GnssSatellites.h>
+#include <Environment/Global/PhysicalConstants.hpp>
 
 const double L1_frequency = 1575.42; //[MHz]
 const double L2_frequency = 1227.60;
-const double L1_lambda = speed_of_light*1e-6/L1_frequency; //[m]
-const double L2_lambda = speed_of_light*1e-6/L2_frequency; //[m]
+const double L1_lambda = environment::speed_of_light_m_s*1e-6/L1_frequency; //[m]
+const double L2_lambda = environment::speed_of_light_m_s*1e-6/L2_frequency; //[m]
 
 // A-priori standard deviation
 const double sigma_r_ini     = 10;   //[m]

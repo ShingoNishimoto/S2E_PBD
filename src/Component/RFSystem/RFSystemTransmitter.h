@@ -24,8 +24,8 @@ public:
   ~RFSystemTransmitter();
 
   void MainRoutine(int count) override;
-  virtual string GetLogHeader() const;
-  virtual string GetLogValue() const;
+  virtual std::string GetLogHeader() const;
+  virtual std::string GetLogValue() const;
 
   //setter
   // inline void InputAcousticSignal(Vector<2> acoustic_signal_freq_hz) { acoustic_signal_freq_hz_ = acoustic_signal_freq_hz; }
