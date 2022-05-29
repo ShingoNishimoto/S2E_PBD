@@ -44,6 +44,8 @@ void PBD_GnssObservation::UpdateGnssObservation()
   libra::Vector<3> sat_position_i = orbit_.GetSatPosition_i(); // ECI
 
   info_.now_observed_gnss_sat_id.clear(); //クリア
+  ClearPreValues(true_values_);
+  ClearPreValues(observed_values_);
 
   for (int gnss_sat_id = 0; gnss_sat_id < num_of_gnss_satellites_; ++gnss_sat_id) {
     //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; 　←この衛星たちの軌道情報が悪いからこうしていたのか？
@@ -196,3 +198,17 @@ void PBD_GnssObservation::UpdateInfoAfterObserved()
 
   return;
 }
+
+void PBD_GnssObservation::ClearPreValues(GnssObservedValues& values)
+{
+  values.observable_gnss_sat_id.clear();
+  values.gnss_satellites_position.clear();
+  values.gnss_clock.clear();
+  values.L1_carrier_phase.clear();
+  values.L1_pseudo_range.clear();
+  values.L2_carrier_phase.clear();
+  values.L2_pseudo_range.clear();
+  values.ionfree_carrier_phase.clear();
+  values.ionfree_pseudo_range.clear();
+};
+

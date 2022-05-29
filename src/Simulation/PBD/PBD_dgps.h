@@ -35,7 +35,7 @@ public:
 
   PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
-  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_);//, const Orbit& main_orbit, const Orbit& target_orbit);
+  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation);//, const Orbit& main_orbit, const Orbit& target_orbit);
   void OrbitPropagation();
   void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
   // そもそもこれをpublicにしている理由がないか．
@@ -73,7 +73,7 @@ private:
 
   // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
-  vector<PBD_GnssObservation*> gnss_observations_;
+  vector<PBD_GnssObservation> gnss_observations_;  // 参照を受け取る
 
     struct GnssObserveModel
     {
@@ -82,7 +82,7 @@ private:
       vector<double> carrier_phase_range_model;
     };
 
-    vector<GnssObserveModel*> gnss_observed_models_; // = { &main_model, &target_model }; //なぜここでの初期化が必要なのか?あと普通に参照型であれば無理なのはなぜ？
+    vector<GnssObserveModel> gnss_observed_models_; // = { &main_model, &target_model };
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．

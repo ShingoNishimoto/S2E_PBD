@@ -75,6 +75,7 @@ private:
   const GnssSatellites& gnss_satellites_;
   //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
   bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
+  void ClearPreValues(GnssObservedValues& values);
 
   // std::random_device seed_gen;
   std::mt19937 mt;

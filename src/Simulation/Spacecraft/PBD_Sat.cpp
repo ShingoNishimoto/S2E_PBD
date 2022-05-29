@@ -40,7 +40,7 @@ void PBD_Sat::Update(const SimTime* sim_time)
   GenerateTorque_b();
   GenerateForce_b();
 
-  // この更新を毎回すると計算は重そうだが，しょうがないか．
+  // この更新を毎回すると計算は重そうだが，しょうがないか．<- 実際の観測頻度に合わせてもいいかも
   gnss_observation_->Update();
 }
 
