@@ -35,8 +35,8 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.bias = Eigen::VectorXd::Zero(num_of_gnss_channel);
 
-  x_est.push_back(x_est_main);
-  x_est.push_back(x_est_target);
+  x_est_.push_back(x_est_main);
+  x_est_.push_back(x_est_target);
   // std::vector<PBD_GnssObservation&> gnss_observations_{ main_observation , target_observation }
   // ここは関係ない？
   // gnss_observations_.push_back(main_observation);
@@ -308,7 +308,7 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   double z = position(2);
   double conv_nm2m = 1e-6; // accの単位補正
 
-  double ac_norm = -mu_const/position.squaredNorm(); //2体の重力項
+  double ac_norm = - mu_const/position.squaredNorm(); //2体の重力項
   double tmp_J2_coefficient = 3.0/2.0*mu_const*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); //J2項の係数
 
   Eigen::Vector3d all_acceleration = position/r;
@@ -961,6 +961,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
       M.block(offset_base + now_index, 0, 1, state_dimension) = pre_M.block(offset_base + pre_index, 0, 1, state_dimension);
       ++pre_index; ++now_index;
     }
+    if (now_index >= num_of_gnss_channel || pre_index >= num_of_gnss_channel) break; // ch以上の受信は出来ない
   }
   // now_index以上の部分を0に落とすということをやる．
   x_est.bias.block(now_index, 0, num_of_gnss_channel - now_index, 1) = Eigen::VectorXd::Zero(num_of_gnss_channel - now_index);

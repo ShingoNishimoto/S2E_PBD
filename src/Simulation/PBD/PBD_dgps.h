@@ -69,7 +69,7 @@ private:
 
   // Eigen::VectorXd x_true; // 状態量真値 for log
   // シンプルにここが参照になっていないからか．
-  std::vector<EstimatedVariables> x_est{}; // 状態量ベクトル
+  std::vector<EstimatedVariables> x_est_{}; // 状態量ベクトル
 
   // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
