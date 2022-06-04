@@ -24,8 +24,8 @@ public:
   ~RFSystemReceiver();
 
   void MainRoutine(int count) override;
-  virtual string GetLogHeader() const;
-  virtual string GetLogValue() const;
+  virtual std::string GetLogHeader() const;
+  virtual std::string GetLogValue() const;
 
   //Getter
   inline double GetReceivedPower() const { return received_power_watt_; }

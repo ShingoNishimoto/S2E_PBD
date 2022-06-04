@@ -1,5 +1,5 @@
 #pragma once
-#include "SimulationConfig.h"
+#include <SimulationConfig.h>
 
 #include "../../Simulation/InterSatComm/RFSystem/RFSystemBeam.h"
 

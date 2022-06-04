@@ -1,11 +1,7 @@
 #include "PBD_Case.h"
-#include "Initialize.h"
-#include "SimulationConfig.h"
-#include "SimulationObject.h"
-#include "../Spacecraft/PBD_Sat.h"
-#include "../GroundStation/PBD_GroundStation.h"
+#include <Interface/InitInput/IniAccess.h>
 
-PBD_Case::PBD_Case(string ini_fname) :SimulationCase(ini_fname)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
+PBD_Case::PBD_Case(std::string ini_fname) :SimulationCase(ini_fname)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
   rel_info_ = new RelativeInformation();
   pbd_inter_sat_comm_ = new PBD_InterSatComm(&sim_config_);
@@ -29,7 +25,7 @@ void PBD_Case::InitializeSpacecrafts()
 
   for (int sat_id = 0; sat_id < sim_config_.num_of_simulated_spacecraft_; sat_id++)
   {
-    auto orbit_conf = IniAccess(sim_config_.sat_file_[sat_id]);
+    auto orbit_conf = IniAccess(sim_config_.sat_file_[sat_id]); // FIXME: ‚±‚±‚É‚ ‚é‚Ì‚ÍŽg‚¢‚É‚­‚¢D
     char* section = "ORBIT";
     Orbit::PROPAGATE_MODE propagate_mode = Orbit::PROPAGATE_MODE(orbit_conf.ReadInt(section, "propagate_mode"));
 
@@ -70,7 +66,7 @@ void PBD_Case::Initialize()
   sim_config_.main_logger_->WriteHeaders();
 
   //Start the simulation
-  cout << "\nSimulationDateTime \n";
+  std::cout << "\nSimulationDateTime \n";
   glo_env_->GetSimTime().PrintStartDateTime();
 
 }
@@ -99,25 +95,25 @@ void PBD_Case::Main()
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
     {
-      cout << "Progresss: " << glo_env_->GetSimTime().GetProgressionRate() << "%\r";
+      std::cout << "Progresss: " << glo_env_->GetSimTime().GetProgressionRate() << "%\r";
     }
   }
 }
 
-string PBD_Case::GetLogHeader() const
+std::string PBD_Case::GetLogHeader() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   str_tmp += WriteScalar("time", "s");
   for (auto& spacecraft : spacecrafts_)
   {
-    str_tmp += WriteVector("Sat" + to_string(spacecraft->GetSatID()) + "_Omega", "b", "rad/s", 3);
+    str_tmp += WriteVector("Sat" + std::to_string(spacecraft->GetSatID()) + "_Omega", "b", "rad/s", 3);
   }
   return str_tmp;
 }
 
-string PBD_Case::GetLogValue() const
+std::string PBD_Case::GetLogValue() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   str_tmp += WriteScalar(glo_env_->GetSimTime().GetElapsedSec());
   for (auto& spacecraft : spacecrafts_)
   {

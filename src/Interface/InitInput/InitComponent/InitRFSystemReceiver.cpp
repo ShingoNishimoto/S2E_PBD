@@ -1,7 +1,6 @@
 #include "../Initialize_PBD.h"
-#include "../../../Component/RFSystem/RFSystemReceiver.h"
 
-RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const string ini_path, PBD_InterSatComm* pbd_inter_sat_comm, const Dynamics* dynamics, const SimTime* sim_time)
+RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const std::string ini_path, PBD_InterSatComm* pbd_inter_sat_comm, const Dynamics* dynamics, const SimTime* sim_time)
 {
   auto conf = IniAccess(ini_path);
   char* section = "RFSystemReceiver";
@@ -16,7 +15,7 @@ RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const string in
 
   double update_interval_sec = prescaler * sim_time->GetCompoStepSec();
 
-  string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_receiver_file");
+  std::string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_receiver_file");
   ANT ant_ = ANT(InitANT(1, ant_ini_path));
 
   RFSystemReceiver rf_sys_r(

@@ -78,16 +78,16 @@ void RFSystemReceiver::UpdateLinkState()
 }
 
 
-string RFSystemReceiver::GetLogHeader() const
+std::string RFSystemReceiver::GetLogHeader() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   str_tmp += WriteScalar("RF received power", "W");
   return str_tmp;
 }
 
-string RFSystemReceiver::GetLogValue() const
+std::string RFSystemReceiver::GetLogValue() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   str_tmp += WriteScalar(received_power_watt_);
   return str_tmp;
 }

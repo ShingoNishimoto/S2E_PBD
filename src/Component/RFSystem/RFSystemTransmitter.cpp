@@ -87,16 +87,16 @@ void RFSystemTransmitter::AddNoise()
   //rf_system_beam_->SetTotalPower((double)power_with_noise);
 }
 
-string RFSystemTransmitter::GetLogHeader() const
+std::string RFSystemTransmitter::GetLogHeader() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   //str_tmp += WriteVector("acoustic_signal_freq_center", "", "Hz", 2);
   return str_tmp;
 }
 
-string RFSystemTransmitter::GetLogValue() const
+std::string RFSystemTransmitter::GetLogValue() const
 {
-  string str_tmp = "";
+  std::string str_tmp = "";
   //str_tmp += WriteVector(acoustic_signal_freq_center_hz_, 9);
   return str_tmp;
 }

@@ -1,10 +1,8 @@
 #pragma once
 
-#include "Spacecraft.h"
+#include <Spacecraft.h>
 #include "PBD_Components.h"
 #include "../PBD/PBD_GnssObservation.h"
-
-class PBD_Components;
 
 class PBD_Sat : public Spacecraft
 {
@@ -20,11 +18,10 @@ public:
   virtual void Update(const SimTime* sim_time);
 
   //ダイナミクスへの力・トルク出力
-  void GenerateTorque_b();
-  void GenerateForce_b();
+  void GenerateTorque_Nm_b();
+  void GenerateForce_N_b();
 
   PBD_GnssObservation* gnss_observation_;
 
 private:
-  PBD_Components* components_;
 };

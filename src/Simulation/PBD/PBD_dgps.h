@@ -69,25 +69,25 @@ private:
 
   // Eigen::VectorXd x_true; // 状態量真値 for log
   // シンプルにここが参照になっていないからか．
-  vector<EstimatedVariables> x_est{}; // 状態量ベクトル
+  std::vector<EstimatedVariables> x_est_{}; // 状態量ベクトル
 
   // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
-  vector<PBD_GnssObservation> gnss_observations_;  // 参照を受け取る
+  std::vector<PBD_GnssObservation> gnss_observations_;  // 参照を受け取る
 
     struct GnssObserveModel
     {
-      vector<double> geometric_range;
-      vector<double> pseudo_range_model;
-      vector<double> carrier_phase_range_model;
+      std::vector<double> geometric_range;
+      std::vector<double> pseudo_range_model;
+      std::vector<double> carrier_phase_range_model;
     };
 
-    vector<GnssObserveModel> gnss_observed_models_; // = { &main_model, &target_model };
+    std::vector<GnssObserveModel> gnss_observed_models_; // = { &main_model, &target_model };
 
     //初期化をもっとスマートにできるように考える
     //ここら辺も構造体にまとめるか．
-    vector<bool> common_observed_status{};
-    vector<int> common_observed_gnss_sat_id{};
+    std::vector<bool> common_observed_status{};
+    std::vector<int> common_observed_gnss_sat_id{};
     
     // now, preが必要か？
     /*
@@ -114,7 +114,7 @@ private:
     double step_time;
     double observe_step_time = 10.0;
     double log_step_time = 1.0;
-    vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
+    std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
     Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
     Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
     // for differential
@@ -129,12 +129,12 @@ private:
     Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
     void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-    void UpdateTrueBias(vector<vector<double>> bias, const int gnss_sat_id, const double lambda);
+    void UpdateTrueBias(std::vector<std::vector<double>> bias, const int gnss_sat_id, const double lambda);
     void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
-    void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch);
-    void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, vector<int>& free_ch);
+    void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
+    void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
 
     int num_of_gnss_satellites_;
 
@@ -152,6 +152,6 @@ private:
     // 一旦singleだけにする
     //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
 
-    template <typename T> bool CheckVectorEqual(const vector<T>& a, const vector<T>& b);
+    template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
 };
 #endif

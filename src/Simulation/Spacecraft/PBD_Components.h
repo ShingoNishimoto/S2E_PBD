@@ -4,16 +4,20 @@
 #include "RelativeInformation.h"
 #include "Structure.h"
 #include "../../Simulation/InterSatComm/PBD_InterSatComm.h"
-#include "GlobalEnvironment.h"
+#include <GlobalEnvironment.h>
+#include <LocalEnvironment.h>
+#include <Simulation/Spacecraft/InstalledComponents.hpp>
 
 #include "../../Component/CDH/OBC_Sat0.h"
 #include "../../Component/CDH/OBC_Sat1.h"
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
 
+//class OBC_Sat0;
+
 using libra::Vector;
 
-class PBD_Components
+class PBD_Components : public InstalledComponents
 {
 public:
   PBD_Components(
@@ -27,9 +31,9 @@ public:
     ClockGenerator* clock_gen,
     const int sat_id);
   ~PBD_Components();
-  Vector<3> GenerateForce_b();
-  Vector<3> GenerateTorque_b();
-  void CompoLogSetUp(Logger& logger);
+  Vector<3> GenerateForce_N_b();
+  Vector<3> GenerateTorque_Nm_b();
+  void LogSetUp(Logger& logger);
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
 
 private:

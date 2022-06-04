@@ -1,7 +1,7 @@
 #include "../Initialize_PBD.h"
 #include "../../../Simulation/InterSatComm/RFSystem/RFSystemBeam.h"
 
-RFSystemBeam InitRFSystemBeam(const string ini_path)
+RFSystemBeam InitRFSystemBeam(const std::string ini_path)
 {
   auto conf = IniAccess(ini_path);
   char* section = "RFSystemBeam";
@@ -11,7 +11,7 @@ RFSystemBeam InitRFSystemBeam(const string ini_path)
   double total_power_watt = conf.ReadDouble(section, "total_power");
 
 
-  string name_tag = conf.ReadString(section, "name_tag");
+  std::string name_tag = conf.ReadString(section, "name_tag");
 
   RFSystemBeam rf_system_beam;
 

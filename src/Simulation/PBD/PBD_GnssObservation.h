@@ -5,7 +5,7 @@
 #include <utility>
 #include <random>
 #define _USE_MATH_DEFINES
-#include <cmath>
+#include <math.h>
 #include "Vector.hpp"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
@@ -32,11 +32,11 @@ struct GnssObservedValues
 struct GnssObserveInfo
 {
   // {gnss_sat_id: true/false, ...}
-  vector<bool> pre_observed_status{};
-  vector<bool> now_observed_status{};
+  std::vector<bool> pre_observed_status{};
+  std::vector<bool> now_observed_status{};
   // {index: gnss_sat_id} index means the position in the state variables
-  vector<int> pre_observed_gnss_sat_id{};
-  vector<int> now_observed_gnss_sat_id{};
+  std::vector<int> pre_observed_gnss_sat_id{};
+  std::vector<int> now_observed_gnss_sat_id{};
   // {index: info}
   // 以下はモデルで計算するものなのでここではない．
   // vector<double> geometric_range{};
@@ -61,8 +61,8 @@ public:
   GnssObservedValues observed_values_;
   GnssObserveInfo info_;
   int num_of_gnss_satellites_; // というかこれはここに要らんのでは？
-  vector<double> l1_bias_{};
-  vector<double> l2_bias_{};
+  std::vector<double> l1_bias_{};
+  std::vector<double> l2_bias_{};
 
   // receiver clock biasの真値[m]
   double receiver_clock_bias_;

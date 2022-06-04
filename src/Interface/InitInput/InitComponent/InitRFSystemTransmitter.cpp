@@ -1,7 +1,6 @@
 #include "../Initialize_PBD.h"
-#include "../../../Component/RFSystem/RFSystemTransmitter.h"
 
-RFSystemTransmitter InitRFSystemTransmitter(ClockGenerator* clock_gen, const string ini_path, PBD_InterSatComm* pbd_inter_sat_comm, const Dynamics* dynamics)
+RFSystemTransmitter InitRFSystemTransmitter(ClockGenerator* clock_gen, const std::string ini_path, PBD_InterSatComm* pbd_inter_sat_comm, const Dynamics* dynamics)
 {
   auto conf = IniAccess(ini_path);
   char* section = "RFSystemTransmitter";
@@ -16,7 +15,7 @@ RFSystemTransmitter InitRFSystemTransmitter(ClockGenerator* clock_gen, const str
 
   q_b2c = q_b2c.normalize();
 
-  string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_transmitter_file");
+  std::string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_transmitter_file");
   ANT ant_ = ANT(InitANT(2, ant_ini_path));
 
   RFSystemTransmitter rf_sys_t(

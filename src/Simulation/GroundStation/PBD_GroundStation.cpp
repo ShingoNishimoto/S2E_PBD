@@ -1,5 +1,4 @@
 #include "PBD_GroundStation.h"
-#include "PBD_GSComponents.h"
 
 PBD_GroundStation::PBD_GroundStation(SimulationConfig* config, int gs_id)
   :GroundStation(config, gs_id)
@@ -23,8 +22,8 @@ void PBD_GroundStation::LogSetup(Logger& logger)
   components_->CompoLogSetUp(logger);
 }
 
-void PBD_GroundStation::Update(const Dynamics& dynamics, const ANT& sc_ant, const PBD_GroundStation& PBD_gs, const double& current_jd)
+void PBD_GroundStation::Update(const Dynamics& dynamics, const GlobalEnvironment& global_env, const ANT& sc_ant, const PBD_GroundStation& PBD_gs)
 {
-  GroundStation::Update(current_jd);
+  GroundStation::Update(global_env.GetCelesInfo().GetEarthRotation());
   components_->gscalculator_->Update(dynamics, sc_ant, PBD_gs, *(components_->ant_));  // compo->ant_がnullの場合未定義動作になる気がするので対処が必要？
 }
