@@ -7,7 +7,8 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
   if(sat_id_ == 0)
   {
     // OBC
-    obc0_ = new OBC_Sat0(clock_gen, *this);
+    obc0_ = new OBC(clock_gen);
+    // obc0_ = new OBC(clock_gen);
     // RF System
     std::string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_transmitter_file");
     rf_sys_transmitter_ = new RFSystemTransmitter(InitRFSystemTransmitter(clock_gen, ini_path, pbd_inter_sat_comm, dynamics));
@@ -15,7 +16,7 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
   else if (sat_id_ == 1)
   {
     // OBC
-    obc1_ = new OBC_Sat1(clock_gen, *this);
+    obc1_ = new OBC(clock_gen);
     // RF System
     std::string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_receiver_file");
     rf_sys_receiver_ = new RFSystemReceiver(InitRFSystemReceiver(clock_gen, ini_path, pbd_inter_sat_comm, dynamics, &(glo_env->GetSimTime())));
@@ -59,12 +60,12 @@ void PBD_Components::LogSetUp(Logger & logger)
 {
   if (sat_id_ == 0)
   {
-    // logger.AddLoggable(obc0_);
+    logger.AddLoggable(obc0_);
     // logger.AddLoggable(rf_sys_transmitter_);
   }
   else if (sat_id_ == 1)
   {
-    // logger.AddLoggable(obc1_);
+    logger.AddLoggable(obc1_);
     // logger.AddLoggable(rf_sys_receiver_);
   }
 }
