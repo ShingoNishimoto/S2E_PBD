@@ -11,18 +11,16 @@
 class PBD_Lambda
 {
 public:
-  PBD_Lambda(Eigen::MatrixXd Qa, Eigen::VectorXd a_est);
+  PBD_Lambda(Eigen::MatrixXd Q_a, Eigen::VectorXd a_est);
   ~PBD_Lambda();
 
   void Update();
-  void UpdateLambda();
-  void CalcIonfreeObservation();
-  void UpdateInfoAfterObserved();
-
+ 
 private:
   int n;
   Eigen::MatrixXd Z; // Z transformation
   Eigen::MatrixXd L; // Lower triangular matrix
+  Eigen::VectorXd a; // estimated ambiguity
 
   void IntegerGaussTransformation();
 
