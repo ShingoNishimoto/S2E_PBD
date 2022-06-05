@@ -2,6 +2,7 @@
 #include <set>
 #include "PBD_dgps.h"
 #include "PBD_const.h"
+#include "PBD_Lambda.h"
 
 // clock model
 #define CLOCK_IS_WHITE_NOISE (1)
@@ -628,6 +629,12 @@ void PBD_dgps::KalmanFilter()
     offset = single_dimension + i;
     if (M(offset, offset) < 1e-6) M(offset, offset) = sqrt(pow(M(offset, offset), 2.0));
   }
+
+  // IAR
+  Eigen::MatrixXd Q_a_main = M.block(num_of_single_status, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel);
+  Eigen::VectorXd a_main = x_est_main.bias/L1_lambda;
+  PBD_Lambda lambda(Q_a_main, a_main);
+  lambda.Solve();
 
   if (!std::isfinite(x_est_main.position(0)))
   {

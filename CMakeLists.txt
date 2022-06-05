@@ -126,6 +126,7 @@ set(SOURCE_FILES
   src/Simulation/InterSatComm/PBD_InterSatComm.cpp
   src/Simulation/InterSatComm/RFSystem/RFSystemBeam.cpp
   src/Simulation/PBD/PBD_dgps.cpp
+  src/Simulation/PBD/PBD_GnssObservation.cpp
   src/Simulation/PBD/PBD_Lambda.cpp
   src/Simulation/PBD/PBD_const.cpp
   src/Component/CDH/OBC_Sat0.cpp
