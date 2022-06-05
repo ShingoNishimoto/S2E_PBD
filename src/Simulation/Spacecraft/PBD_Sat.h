@@ -11,9 +11,8 @@ public:
 
   // 状態量の更新
   virtual void Update(const SimTime* sim_time);
-  /*
   ~PBD_Sat();
-
+  /*
   // 初期化
   virtual void Initialize(SimulationConfig* sim_config, const GlobalEnvironment* glo_env, PBD_InterSatComm* pbd_inter_sat_comm, const int sat_id);
   // ログ保存機能

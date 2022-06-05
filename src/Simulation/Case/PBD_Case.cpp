@@ -1,7 +1,7 @@
 #include "PBD_Case.h"
 #include <Interface/InitInput/IniAccess.h>
 
-PBD_Case::PBD_Case(std::string ini_fname) :SimulationCase(ini_fname)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
+PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
   rel_info_ = new RelativeInformation();
   pbd_inter_sat_comm_ = new PBD_InterSatComm(&sim_config_);
@@ -54,6 +54,7 @@ void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
   pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), (spacecrafts_.at(0)->GetDynamics()).GetOrbit(), (spacecrafts_.at(1)->GetDynamics()).GetOrbit(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_)); // ここはGetterとか使った方がいい．
+  
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
   rel_info_->LogSetup(*(sim_config_.main_logger_));
@@ -88,7 +89,7 @@ void PBD_Case::Main()
     {
       // 実際はここの中でGNSS観測情報の更新をしたい．
       spacecraft->Update(&(glo_env_->GetSimTime()));
-      spacecraft->Clear(); //Zero clear force and torque for dynamics
+      // spacecraft->Clear(); //Zero clear force and torque for dynamics
     }
     // 軌道のupdateができてるかどうか確認した方がいい
     pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));

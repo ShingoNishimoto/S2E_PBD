@@ -60,12 +60,12 @@ void PBD_Components::LogSetUp(Logger & logger)
 {
   if (sat_id_ == 0)
   {
-    logger.AddLoggable(obc0_);
+    // logger.AddLoggable(obc0_);
     // logger.AddLoggable(rf_sys_transmitter_);
   }
   else if (sat_id_ == 1)
   {
-    logger.AddLoggable(obc1_);
+    // logger.AddLoggable(obc1_);
     // logger.AddLoggable(rf_sys_receiver_);
   }
 }

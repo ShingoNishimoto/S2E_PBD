@@ -53,7 +53,7 @@ public:
   PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites);
   ~PBD_GnssObservation();
 
-  void Update();
+  void Update(void);
   void UpdateGnssObservation();
   void CalcIonfreeObservation();
   void UpdateInfoAfterObserved();

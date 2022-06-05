@@ -28,7 +28,7 @@ PBD_GnssObservation::PBD_GnssObservation(const Orbit& orbit, const GnssSatellite
 
 PBD_GnssObservation::~PBD_GnssObservation() {}
 
-void PBD_GnssObservation::Update()
+void PBD_GnssObservation::Update(void)
 {
   // receiver clock
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);

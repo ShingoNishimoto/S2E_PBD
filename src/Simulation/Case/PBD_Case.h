@@ -11,8 +11,9 @@
 class PBD_Case : public SimulationCase
 {
 public:
-  PBD_Case(std::string ini_fname);// , MCSimExecutor& mc_sim, const string log_path);
+  PBD_Case(std::string ini_base);// , MCSimExecutor& mc_sim, const string log_path);
   virtual ~PBD_Case();
+
   void Initialize();
   void Main();
 
