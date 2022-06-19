@@ -631,9 +631,11 @@ void PBD_dgps::KalmanFilter()
   }
 
   // IAR
-  Eigen::MatrixXd Q_a_main = M.block(num_of_single_status, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel);
-  Eigen::VectorXd a_main = x_est_main.bias/L1_lambda;
-  PBD_Lambda lambda(Q_a_main, a_main);
+  Eigen::MatrixXd Q_a_main = M.block(num_of_single_status, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel)/pow(L1_lambda, 2);
+  Eigen::VectorXd a_main = x_est_main.bias/L1_lambda; // ambiguity
+  // non-zeroに限定する．
+  int num_of_obsetved_gnss =  gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
+  PBD_Lambda lambda(Q_a_main.topLeftCorner(num_of_obsetved_gnss, num_of_obsetved_gnss), a_main.topRows(num_of_obsetved_gnss), 2);
   lambda.Solve();
 
   if (!std::isfinite(x_est_main.position(0)))
