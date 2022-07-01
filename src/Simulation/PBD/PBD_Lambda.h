@@ -23,7 +23,7 @@ private:
   Eigen::MatrixXd L; // Lower triangular matrix
   Eigen::VectorXd a_hat; // estimated ambiguity
   Eigen::VectorXd a; // fixed ambiguity
-  Eigen::VectorXd z; // fixed z transformed ambigiuty
+  Eigen::MatrixXd z; // fixed z transformed ambigiuty
   Eigen::VectorXd sq_norm;
   Eigen::VectorXd D; // Diagnal of LtDL of Q_a
 
@@ -31,9 +31,11 @@ private:
   void Permute(const int k, const double delta);
   void Reduction(void);
   void IntegerLeastSquares(const int n_cands, Eigen::VectorXd z_hat);
-  int Argmax(Eigen::VectorXd x);
-  Eigen::VectorXd::Index Argsort(Eigen::VectorXd x);
-  // std::random_device seed_gen;
+  Eigen::Index Argmax(const Eigen::VectorXd& x);
+  Eigen::Index Argmin(const Eigen::VectorXd& x);
+  std::vector<Eigen::Index> Argsort(Eigen::VectorXd x);
+  void RemoveRow(Eigen::VectorXd& matrix, unsigned int row);
+    // std::random_device seed_gen;
   std::mt19937 mt;
 };
 

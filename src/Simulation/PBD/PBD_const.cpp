@@ -2,6 +2,8 @@
 #include <GnssSatellites.h>
 #include <Environment/Global/PhysicalConstants.hpp>
 
+// TODO: これも初期設定的なものはiniファイルに入れる．
+
 const double L1_frequency = 1575.42; //[MHz]
 const double L2_frequency = 1227.60;
 const double L1_lambda = environment::speed_of_light_m_s*1e-6/L1_frequency; //[m]
@@ -14,7 +16,7 @@ const double sigma_acc_r_ini = 150; // 10000; //[nm/s^2]
 const double sigma_acc_t_ini = 300; // 20000; //[nm/s^2]
 const double sigma_acc_n_ini = 200; // 15000;  //[nm/s^2]
 const double sigma_cdt_ini   = 100;    //[m]
-const double sigma_N_ini     = 1;    //[m]
+const double sigma_N_ini     = 1;   //[m]
 // observation noise
 const double pseudo_sigma    = 1; //[m]
 const double carrier_sigma   = 1e-3; //[m]

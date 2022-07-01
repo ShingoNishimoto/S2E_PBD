@@ -15,6 +15,7 @@
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 #include "PBD_GnssObservation.h"
+#include "PBD_const.h"
 
 
 class PBD_dgps
@@ -30,7 +31,8 @@ public:
     Eigen::Vector3d velocity;
     //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
     Eigen::Vector3d acceleration; // 経験加速度
-    Eigen::VectorXd bias; // [m] ambiguityと書く方がいい？
+    Eigen::VectorXd N; // [cycle] ambiguity
+    const double lambda = L1_lambda; // wave length [m]
   };
 
   PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation); // OrbitとGnssObservation同時に取得したい．
@@ -58,12 +60,12 @@ private:
   EstimatedVariables x_est_main;
   EstimatedVariables x_est_target;
 
-  Eigen::VectorXd true_bias_main;
+  Eigen::VectorXd true_N_main;
 
   // std::map<const int, int> main_index_dict;
 
   // 辞書が欲しい commonとmainをつなげるために
-  Eigen::VectorXd true_bias_target; // [m]
+  Eigen::VectorXd true_N_target; // [m]
 
   // std::map<const int, int> common_index_dict;
 
@@ -129,7 +131,7 @@ private:
     Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
     void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-    void UpdateTrueBias(std::vector<std::vector<double>> bias, const int gnss_sat_id, const double lambda);
+    void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
     void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
@@ -153,5 +155,7 @@ private:
     //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
 
     template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
+
+    void MakeDoubleDifference();
 };
 #endif

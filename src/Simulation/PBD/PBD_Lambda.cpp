@@ -33,7 +33,8 @@ void PBD_Lambda::Solve(void)
   std::cout << "D" << D << std::endl;
   std::cout << "Z" << Z << std::endl;
   std::cout << "L" << L << std::endl;
-  std::cout << "a" << a_hat << std::endl;
+  std::cout << "a_hat" << a_hat << std::endl;
+  std::cout << "a" << a << std::endl;
 #endif // LAMBDA_DEBUG
   return;
 }
@@ -116,7 +117,6 @@ void PBD_Lambda::Reduction(void)
   }
 }
 
-// TODO: ˆê’UDescrete Integer Search•”•ª‚ðŽÀ‘•‚·‚éD
 void PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen::VectorXd z_hat)
 {
   assert(z_hat.size() > 0);
@@ -193,23 +193,58 @@ void PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen::VectorXd z_hat)
       }
     }
   }
+  // order the arrays according to sq_norm
+  std::vector<Eigen::Index> i_sort = Argsort(sq_norm);
 
-  // order the arrays
+  // TODO: ratio test
+  a = Z.inverse() * z.block(0, i_sort.at(0), n, 1);
+
 #ifdef LAMBDA_DEBUG
   std::cout << "z" << z << std::endl;
   std::cout << "square_norm" << sq_norm << std::endl;
+  // std::cout << "a" << a << std::endl;
 #endif // LAMBDA_DEBUG
 
 }
 
-int PBD_Lambda::Argmax(Eigen::VectorXd x)
+Eigen::Index PBD_Lambda::Argmax(const Eigen::VectorXd& x)
 {
-  Eigen::VectorXd::Index row;
+  Eigen::Index row;
   x.maxCoeff(&row);
-  return (int)row;
+  return row;
 }
 
-Eigen::VectorXd::Index PBD_Lambda::Argsort(Eigen::VectorXd x)
+Eigen::Index PBD_Lambda::Argmin(const Eigen::VectorXd& x)
 {
+  Eigen::Index row;
+  x.minCoeff(&row);
+  return row;
+}
 
+std::vector<Eigen::Index> PBD_Lambda::Argsort(Eigen::VectorXd x)
+{
+  Eigen::VectorXd x_cpy = x;
+  size_t n = x.size();
+  Eigen::Index i_min;
+  std::vector<Eigen::Index> indeces;
+  while (indeces.size() < n)
+  {
+    i_min = Argmin(x_cpy);
+    indeces.push_back(i_min);
+    RemoveRow(x_cpy, i_min);
+  }
+  return indeces;
+}
+
+void PBD_Lambda::RemoveRow(Eigen::VectorXd& vector, unsigned int row)
+{
+  // Á‚µ‚Ä‚¢‚­‚Æ‚¸‚ê‚é‚©‚çŒã‚ë‚©‚ç
+  // for (int row = end_row; row >= begin_row; --row) {
+    unsigned int numRows = vector.rows() - 1;
+
+    if (row < numRows)
+      vector.block(row, 0, numRows - row, 1) = vector.bottomRows(numRows - row);
+
+    vector.conservativeResize(numRows, 1);
+  // }
 }
