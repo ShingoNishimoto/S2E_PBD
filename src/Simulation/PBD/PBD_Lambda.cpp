@@ -4,17 +4,17 @@
 #include <cassert>
 #define LAMBDA_DEBUG
 
-PBD_Lambda::PBD_Lambda(Eigen::MatrixXd Q_a, Eigen::VectorXd a_est, const int n_cands): a_hat(a_est), n_cands(n_cands)
+PBD_Lambda::PBD_Lambda(Eigen::MatrixXd P_a, Eigen::VectorXd a_est, const int n_cands): a_hat(a_est), n_cands(n_cands)
 {
-  n = Q_a.rows();
+  n = P_a.rows();
   Z = Eigen::MatrixXd::Identity(n, n);
-  Eigen::LDLT<Eigen::MatrixXd> LDLTOfQ_a(Q_a.transpose());
-  L = LDLTOfQ_a.matrixL();
-  D = LDLTOfQ_a.vectorD();
+  Eigen::LDLT<Eigen::MatrixXd> LDLTOfP_a(P_a.transpose());
+  L = LDLTOfP_a.matrixL();
+  D = LDLTOfP_a.vectorD();
   z = Eigen::MatrixXd::Zero(n, n_cands);
   sq_norm = Eigen::VectorXd::Zero(n_cands);
 #ifdef LAMBDA_DEBUG
-  std::cout << "Q_a" << Q_a << std::endl;
+  std::cout << "P_a" << P_a << std::endl;
   std::cout << "a_est" << a_est << std::endl;
 #endif // LAMBDA_DEBUG
   // a ?
@@ -248,3 +248,5 @@ void PBD_Lambda::RemoveRow(Eigen::VectorXd& vector, unsigned int row)
     vector.conservativeResize(numRows, 1);
   // }
 }
+
+

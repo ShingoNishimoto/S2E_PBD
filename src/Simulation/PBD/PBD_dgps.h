@@ -21,6 +21,14 @@
 class PBD_dgps
 {
 public:
+  // FIXME:データ構造は要検討．
+  struct Ambiguity
+  {
+    std::vector<double> N; // [cycle] ambiguity
+    std::vector<int> gnss_sat_id; // 対応するGNSS ID
+    std::vector<bool> is_fixed; //不定性解除に成功したかどうか
+  };
+
   struct EstimatedVariables
   {
     //[x[m], y[m], z[m]]
@@ -31,7 +39,8 @@ public:
     Eigen::Vector3d velocity;
     //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
     Eigen::Vector3d acceleration; // 経験加速度
-    Eigen::VectorXd N; // [cycle] ambiguity
+    Ambiguity ambiguity;
+    // Eigen::VectorXd N; // [cycle] ambiguity <- これだけやとGNSS衛星IDとの対応が取れなくてキモイ．
     const double lambda = L1_lambda; // wave length [m]
   };
 
@@ -116,6 +125,7 @@ private:
     double step_time;
     double observe_step_time = 10.0;
     double log_step_time = 1.0;
+    void InitAmbiguity(EstimatedVariables& x_est);
     std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
     Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
     Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
@@ -157,5 +167,6 @@ private:
     template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
 
     void MakeDoubleDifference();
+    int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
 };
 #endif

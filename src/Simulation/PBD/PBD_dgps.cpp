@@ -14,7 +14,7 @@
 static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({main_observation, target_observation}) 
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({ main_observation, target_observation })
 {
   //初期化
   x_est_main.position = Eigen::VectorXd::Zero(3);
@@ -24,7 +24,8 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   libra::Vector<3> velocity_main = main_orbit_.GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_main.velocity(i) = velocity_main[i];
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
-  x_est_main.N = Eigen::VectorXd::Zero(num_of_gnss_channel);
+  // ambiguity初期化のためのメソッド作るか？
+  InitAmbiguity(x_est_main);
 
   x_est_target.position = Eigen::VectorXd::Zero(3);
   libra::Vector<3> position_target = target_orbit_.GetSatPosition_i();
@@ -33,7 +34,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   libra::Vector<3> velocity_target = target_orbit_.GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) = velocity_target[i];
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
-  x_est_target.N = Eigen::VectorXd::Zero(num_of_gnss_channel);
+  InitAmbiguity(x_est_target);
 
   x_est_.push_back(x_est_main);
   x_est_.push_back(x_est_target);
@@ -90,7 +91,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration(0) += acc_r_dist(mt);
   x_est_main.acceleration(1) += acc_t_dist(mt);
   x_est_main.acceleration(2) += acc_n_dist(mt);
-  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_main.N(i) += N_dist(mt);
+  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_main.ambiguity.at(i).N += N_dist(mt);
   for(int i = 0; i < 3; ++i) x_est_target.position(i) += position_dist(mt);
   x_est_target.clock(0) += receiver_clock_dist(mt);
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) += velocity_dist(mt);
@@ -98,7 +99,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration(0) += acc_r_dist(mt);
   x_est_target.acceleration(1) += acc_t_dist(mt);
   x_est_target.acceleration(2) += acc_n_dist(mt);
-  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_target.N(i) += N_dist(mt);
+  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_target.ambiguity.at(i).N += N_dist(mt);
 
   common_observed_status.assign(num_of_gnss_satellites_, false);
   // for (int i = 0; i < num_of_gnss_channel; ++i) main_free_ch.push_back(i);
@@ -129,6 +130,13 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 }
 
 PBD_dgps::~PBD_dgps(){}
+
+void PBD_dgps::InitAmbiguity(EstimatedVariables& x_est)
+{
+  x_est.ambiguity.N.assign(num_of_gnss_channel, 0);
+  x_est.ambiguity.gnss_sat_id.assign(num_of_gnss_channel, num_of_gnss_satellites_);
+  x_est.ambiguity.is_fixed.assign(num_of_gnss_channel, false);
+}
 
 void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation_, PBD_GnssObservation& target_observation_)// , const Orbit& main_orbit, const Orbit& target_orbit)
 {
@@ -177,9 +185,9 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.velocity(i) << ","; // v_t_est
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.acceleration(i) << ","; // a_t_est
     for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << true_N_main(i) << ","; // N_true
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.N(i) << ","; // N_est
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.ambiguity.at(i).N << ","; // N_est
     for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << true_N_target(i) << ","; // N_true
-    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.N(i) << ","; // N_est
+    for (int i = 0; i < num_of_gnss_channel; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.ambiguity.at(i).N << ","; // N_est
     for (int i = 0; i < state_dimension; ++i) ofs << std::fixed << std::setprecision(30) << M(i, i) << ",";
     // record visible gnss sat number
     /*
@@ -388,7 +396,6 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
 // この段階必要ない気がする．
 Eigen::MatrixXd PBD_dgps::CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const
 {
-
   Eigen::MatrixXd A_main = CalculateJacobian(x_est_main.position, x_est_main.velocity, x_est_main.acceleration);
   Eigen::MatrixXd A_target = CalculateJacobian(x_est_target.position, x_est_target.velocity, x_est_target.acceleration);
   Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_of_status, num_of_status);
@@ -575,7 +582,8 @@ void PBD_dgps::KalmanFilter()
   x_predict.block(3, 0, 1, 1) = x_est_main.clock;
   x_predict.block(4, 0, 3, 1)  = x_est_main.velocity;
   x_predict.block(7, 0, 3, 1) = x_est_main.acceleration;
-  x_predict.block(10, 0, num_of_gnss_channel, 1) = x_est_main.N;
+  // Nを連続に保持してないのでMapは使えない．
+  x_predict.block(10, 0, num_of_gnss_channel, 1) = Eigen::Map<Eigen::VectorXd>(x_est_main.N;
   //x_predict(10) = Cd;
   x_predict.block(single_dimension, 0, 3, 1) = x_est_target.position;
   x_predict.block(single_dimension + 3, 0, 1, 1) = x_est_target.clock;
@@ -632,12 +640,14 @@ void PBD_dgps::KalmanFilter()
   // TODO: make the Double Differential ambiguity
 
   // IAR
+  /*
   Eigen::MatrixXd Q_a_main = M.block(num_of_single_status, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel);
   Eigen::VectorXd a_main = x_est_main.N; // ambiguity
   // non-zeroに限定する．
   int num_of_obsetved_gnss =  gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
   PBD_Lambda lambda(Q_a_main.topLeftCorner(num_of_obsetved_gnss, num_of_obsetved_gnss), a_main.topRows(num_of_obsetved_gnss), 2);
   lambda.Solve();
+  */
 
   if (!std::isfinite(x_est_main.position(0)))
   {
@@ -1059,4 +1069,14 @@ template <typename T> bool PBD_dgps::CheckVectorEqual(const std::vector<T>& a, c
     }
 
     return true;
+}
+
+int PBD_dgps::SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N)
+{
+  Eigen::VectorXd Var_N = P_N.diagonal();
+  std::vector<double> var_N;
+  for (int i = 0; i < Var_N.size(); ++i) var_N.push_back(Var_N(i));
+
+  // 使うのはPの対角成分だけでいい．
+  return gnss_sat_id;
 }

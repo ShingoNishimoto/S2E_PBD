@@ -11,7 +11,7 @@
 class PBD_Lambda
 {
 public:
-  PBD_Lambda(Eigen::MatrixXd Q_a, Eigen::VectorXd a_est, const int n_cands); // QÆ“n‚µ‚É‚·‚×‚«‚Å‚Í?
+  PBD_Lambda(Eigen::MatrixXd P_a, Eigen::VectorXd a_est, const int n_cands); // QÆ“n‚µ‚É‚·‚×‚«‚Å‚Í?
   ~PBD_Lambda();
 
   void Solve(void);
@@ -25,7 +25,7 @@ private:
   Eigen::VectorXd a; // fixed ambiguity
   Eigen::MatrixXd z; // fixed z transformed ambigiuty
   Eigen::VectorXd sq_norm;
-  Eigen::VectorXd D; // Diagnal of LtDL of Q_a
+  Eigen::VectorXd D; // Diagnal of LtDL of P_a
 
   void IntegerGaussTransformation(const int i, const int j);
   void Permute(const int k, const double delta);
