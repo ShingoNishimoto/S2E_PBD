@@ -12,6 +12,7 @@
 #define QR (1)
 
 static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
+static const double PBD_DGPS_kConvNm2m = 1e-9;
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
 PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_orbit_(main_orbit), target_orbit_(target_orbit), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({ main_observation, target_observation })
@@ -314,7 +315,6 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   double v = velocity.norm();
 
   double z = position(2);
-  double conv_nm2m = 1e-6; // accの単位補正
 
   double ac_norm = - mu_const/position.squaredNorm(); //2体の重力項
   double tmp_J2_coefficient = 3.0/2.0*mu_const*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); //J2項の係数
@@ -332,7 +332,7 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   Eigen::MatrixXd acc(3, 1);
   acc.block(0, 0, 3, 1) = acceleration;
   Eigen::Vector3d acc_eci = TransRTN2ECI(position, velocity)*acc;
-  all_acceleration +=  acc_eci*conv_nm2m; //残りの摂動要素
+  all_acceleration +=  acc_eci*PBD_DGPS_kConvNm2m; //残りの摂動要素
   // all_acceleration +=  acceleration * conv_nm2m; //残りの摂動要素
 
   return all_acceleration; // m/s2
@@ -408,13 +408,13 @@ Eigen::MatrixXd PBD_dgps::CalculateA(const EstimatedVariables& x_est_main, const
   // A(num_of_single_status + 1, num_of_single_status + 5) = 1.0;
   // A(num_of_single_status + 2, num_of_single_status + 6) = 1.0;
   // // (dv, da)
-  // A(num_of_single_status + 4, num_of_single_status + 7) = 1.0 * 1e-6;
-  // A(num_of_single_status + 5, num_of_single_status + 8) = 1.0 * 1e-6;
-  // A(num_of_single_status + 6, num_of_single_status + 9) = 1.0 * 1e-6;
+  // A(num_of_single_status + 4, num_of_single_status + 7) = 1.0 * 1e-9;
+  // A(num_of_single_status + 5, num_of_single_status + 8) = 1.0 * 1e-9;
+  // A(num_of_single_status + 6, num_of_single_status + 9) = 1.0 * 1e-9;
   // // (dr, da)
-  // A(num_of_single_status, num_of_single_status + 7) = 1.0 * 1e-6* step_time/2;
-  // A(num_of_single_status + 1, num_of_single_status + 8) = 1.0 * 1e-6* step_time/2;
-  // A(num_of_single_status + 2, num_of_single_status + 9) = 1.0 * 1e-6* step_time/2;
+  // A(num_of_single_status, num_of_single_status + 7) = 1.0 * 1e-9* step_time/2;
+  // A(num_of_single_status + 1, num_of_single_status + 8) = 1.0 * 1e-9* step_time/2;
+  // A(num_of_single_status + 2, num_of_single_status + 9) = 1.0 * 1e-9* step_time/2;
 
   return A;
 }
@@ -451,8 +451,8 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
 
   // (v, a)
   Eigen::Matrix3d rtn2eci = TransRTN2ECI(position, velocity);
-  A.block(4, 7, 3, 3) = 1e-6*rtn2eci;
-  // A(4, 7) = 1.0*1e-6;	A(5, 8) = 1.0 * 1e-6;	A(6, 9) = 1.0 * 1e-6;
+  A.block(4, 7, 3, 3) = PBD_DGPS_kConvNm2m*rtn2eci;
+  // A(4, 7) = 1.0*1e-9;	A(5, 8) = 1.0 * 1e-9;	A(6, 9) = 1.0 * 1e-9;
 
   // これはもしCdも推定しているならいる．
   //A(4,10) = -v*vx;    A(5,10) = -v*vy;    A(6,10) = -v*vz;
@@ -640,14 +640,15 @@ void PBD_dgps::KalmanFilter()
   // TODO: make the Double Differential ambiguity
 
   // IAR
-  /*
+
   Eigen::MatrixXd Q_a_main = M.block(num_of_single_status, num_of_single_status, num_of_gnss_channel, num_of_gnss_channel);
   Eigen::VectorXd a_main = x_est_main.N; // ambiguity
   // non-zeroに限定する．
   int num_of_obsetved_gnss =  gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
+#ifdef LAMBDA_DEBUG
   PBD_Lambda lambda(Q_a_main.topLeftCorner(num_of_obsetved_gnss, num_of_obsetved_gnss), a_main.topRows(num_of_obsetved_gnss), 2);
   lambda.Solve();
-  */
+#endif // LAMBDA_DEBUG
 
   if (!std::isfinite(x_est_main.position(0)))
   {
