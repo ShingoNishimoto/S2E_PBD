@@ -92,7 +92,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration(0) += acc_r_dist(mt);
   x_est_main.acceleration(1) += acc_t_dist(mt);
   x_est_main.acceleration(2) += acc_n_dist(mt);
-  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_main.ambiguity.at(i).N += N_dist(mt);
+  for(int i = 0; i < num_of_gnss_channel; ++i) x_est_main.ambiguity.N.at(0) += N_dist(mt);
   for(int i = 0; i < 3; ++i) x_est_target.position(i) += position_dist(mt);
   x_est_target.clock(0) += receiver_clock_dist(mt);
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) += velocity_dist(mt);
@@ -321,6 +321,8 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
 
   Eigen::Vector3d all_acceleration = position/r;
 
+
+  // FIXME: ここの計算で各座標軸成分への変換がない気がする．x/r, y/r, z/rが抜けている．
   all_acceleration(0) *= ac_norm - tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0));
   all_acceleration(1) *= ac_norm - tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0));
   all_acceleration(2) *= ac_norm - tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0));
