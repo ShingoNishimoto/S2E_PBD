@@ -21,7 +21,7 @@
 class PBD_dgps
 {
 public:
-  // FIXME:データ構造は要検討．
+  // FIXME:データ構造は要検討．この構造にしていいのか？
   struct Ambiguity
   {
     std::vector<double> N; // [cycle] ambiguity
