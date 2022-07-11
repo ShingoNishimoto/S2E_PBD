@@ -15,11 +15,20 @@
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 #include "PBD_GnssObservation.h"
+#include "PBD_const.h"
 
 
 class PBD_dgps
 {
 public:
+  // FIXME:データ構造は要検討．この構造にしていいのか？
+  struct Ambiguity
+  {
+    std::vector<double> N; // [cycle] ambiguity
+    std::vector<int> gnss_sat_id; // 対応するGNSS ID
+    std::vector<bool> is_fixed; //不定性解除に成功したかどうか
+  };
+
   struct EstimatedVariables
   {
     //[x[m], y[m], z[m]]
@@ -30,7 +39,9 @@ public:
     Eigen::Vector3d velocity;
     //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
     Eigen::Vector3d acceleration; // 経験加速度
-    Eigen::VectorXd bias; // [m] ambiguityと書く方がいい？
+    Ambiguity ambiguity;
+    // Eigen::VectorXd N; // [cycle] ambiguity <- これだけやとGNSS衛星IDとの対応が取れなくてキモイ．
+    const double lambda = L1_lambda; // wave length [m]
   };
 
   PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Orbit& main_orbit, const Orbit& target_orbit, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation); // OrbitとGnssObservation同時に取得したい．
@@ -58,12 +69,12 @@ private:
   EstimatedVariables x_est_main;
   EstimatedVariables x_est_target;
 
-  Eigen::VectorXd true_bias_main;
+  Eigen::VectorXd true_N_main;
 
   // std::map<const int, int> main_index_dict;
 
   // 辞書が欲しい commonとmainをつなげるために
-  Eigen::VectorXd true_bias_target; // [m]
+  Eigen::VectorXd true_N_target; // [m]
 
   // std::map<const int, int> common_index_dict;
 
@@ -114,6 +125,7 @@ private:
     double step_time;
     double observe_step_time = 10.0;
     double log_step_time = 1.0;
+    void InitAmbiguity(EstimatedVariables& x_est);
     std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
     Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
     Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
@@ -129,7 +141,7 @@ private:
     Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
     void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
     void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-    void UpdateTrueBias(std::vector<std::vector<double>> bias, const int gnss_sat_id, const double lambda);
+    void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
     void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
@@ -153,5 +165,8 @@ private:
     //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
 
     template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
+
+    void MakeDoubleDifference();
+    int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
 };
 #endif

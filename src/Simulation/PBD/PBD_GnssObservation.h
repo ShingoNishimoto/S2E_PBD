@@ -11,6 +11,7 @@
 #include "./Orbit/Orbit.h"
 
 
+// ホンマは周波数帯とかコードの種類を抽象化したクラスを作ったほうがいいのかなあ．．
 // このクラスは受信機クラスか何かに拡張する．
 struct GnssObservedValues
 {
@@ -20,8 +21,8 @@ struct GnssObservedValues
 
   std::vector<double> L1_pseudo_range; //[m]
   std::vector<double> L2_pseudo_range; //[m]
-  std::vector<std::pair<double, double>> L1_carrier_phase; //[位相, bias(整数, dtype = double)]
-  std::vector<std::pair<double, double>> L2_carrier_phase; //[位相, bias(整数, dtype = double)]
+  std::vector<std::pair<double, double>> L1_carrier_phase; //[位相, N(整数, dtype = double)]
+  std::vector<std::pair<double, double>> L2_carrier_phase; //[位相, N(整数, dtype = double)]
 
   std::vector<double> ionfree_pseudo_range;
   std::vector<double> ionfree_carrier_phase; //今入っているのは加工済み

@@ -127,6 +127,7 @@ set(SOURCE_FILES
   src/Simulation/InterSatComm/RFSystem/RFSystemBeam.cpp
   src/Simulation/PBD/PBD_dgps.cpp
   src/Simulation/PBD/PBD_GnssObservation.cpp
+  src/Simulation/PBD/PBD_Lambda.cpp
   src/Simulation/PBD/PBD_const.cpp
   src/Component/CDH/OBC_Sat0.cpp
   src/Component/CDH/OBC_Sat1.cpp
@@ -137,7 +138,7 @@ set(SOURCE_FILES
   src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
 )
 # Create executable file
-add_executable(${PROJECT_NAME} ${SOURCE_FILES})
+add_executable(${PROJECT_NAME} ${SOURCE_FILES} "src/Simulation/PBD/PBD_lambda.h" "src/Simulation/PBD/PBD_lambda.cpp")
 # Compile option
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PUBLIC "/W4")

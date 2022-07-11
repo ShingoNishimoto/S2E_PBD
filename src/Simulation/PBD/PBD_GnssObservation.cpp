@@ -145,8 +145,8 @@ void PBD_GnssObservation::CalcIonfreeObservation()
     }
     else if (info_.pre_observed_status.at(i) == false && info_.now_observed_status.at(i) == true)
     {
-      // (first + second)*lambda から真の距離引いてそこからbias求める．ここから！！！！！！！！！！！！！！！！！！！！！ そのまま真の距離引いたら0になるからここでの真の距離は時刻を使う．時刻の精度以下に埋もれる部分が整数不定性として出てくる？伝搬時間も必要やん．
-      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // これじゃダメ．あまり分のbiasを求めないと．あんま関係ない気がするので後で対応する．
+      // (first + second)*lambda から真の距離引いてそこからN求める．ここから！！！！！！！！！！！！！！！！！！！！！ そのまま真の距離引いたら0になるからここでの真の距離は時刻を使う．時刻の精度以下に埋もれる部分が整数不定性として出てくる？伝搬時間も必要やん．
+      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // これじゃダメ．あまり分のNを求めないと．あんま関係ない気がするので後で対応する．
       // これがどのchに対応しているかはわかっている．
       l2_bias_.at(i) = true_values_.L2_carrier_phase.at(observed_gnss_index).second;
     }
