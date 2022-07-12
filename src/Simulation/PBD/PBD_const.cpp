@@ -39,3 +39,6 @@ const double Earth_Radius = 6378136.6; //m
 
 const double tau_a = 900;
 const double tau_cdt = 60;
+
+// for Adaptive Kalman Filter
+const double alpha = 0.3; // forgetting factor
