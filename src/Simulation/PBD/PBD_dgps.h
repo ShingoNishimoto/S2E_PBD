@@ -172,5 +172,7 @@ private:
 
     void MakeDoubleDifference();
     int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
+    Eigen::MatrixXd CalculateSTM(void);
+    void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd Phi, Eigen::MatrixXd H);
 };
 #endif
