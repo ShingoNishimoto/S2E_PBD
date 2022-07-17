@@ -111,9 +111,11 @@ private:
     */
 
     // air drag balistic coeficient
-    const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一定でいいか．
+    const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
 
     Eigen::MatrixXd M;
+    Eigen::MatrixXd Q;
+    Eigen::MatrixXd R;
 
     const int num_of_single_status = 10;
     const int num_of_status = 20;
@@ -136,7 +138,8 @@ private:
     Eigen::MatrixXd CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const;
     Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
     Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-    Eigen::MatrixXd CalculateQ();
+    Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
+    void CalculateQ(void);
     Eigen::MatrixXd CalculatePhi_a(const double dt);
     Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
     void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
@@ -144,6 +147,7 @@ private:
     void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
     void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+    void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
     void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
     void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
     void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
@@ -168,5 +172,7 @@ private:
 
     void MakeDoubleDifference();
     int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
+    Eigen::MatrixXd CalculateSTM(void);
+    void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd Phi, Eigen::MatrixXd H);
 };
 #endif

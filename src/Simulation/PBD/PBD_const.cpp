@@ -23,9 +23,9 @@ const double carrier_sigma   = 5*1e-3; //[m]
 // process noise
 const double sigma_r_process = 0;    //[m]
 const double sigma_v_process = 0;    //[m/s] 
-const double sigma_acc_r_process = 750; // 15;    //[nm/s^2]
-const double sigma_acc_t_process = 100; // 30;   //[nm/s^2]
-const double sigma_acc_n_process = 50; // 20;    //[nm/s^2]
+const double sigma_acc_r_process = 200; // 15;    //[nm/s^2]
+const double sigma_acc_t_process = 500; // 30;   //[nm/s^2]
+const double sigma_acc_n_process = 100; // 20;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
 const double sigma_cdt_process   = 5;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
@@ -39,3 +39,6 @@ const double Earth_Radius = 6378136.6; //m
 
 const double tau_a = 900;
 const double tau_cdt = 60;
+
+// for Adaptive Kalman Filter
+const double alpha = 0.3; // forgetting factor
