@@ -6,7 +6,7 @@
 #include "../../Simulation/InterSatComm/PBD_InterSatComm.h"
 #include <GlobalEnvironment.h>
 #include <LocalEnvironment.h>
-#include <InstalledComponents.hpp>
+#include <Simulation/Spacecraft/InstalledComponents.hpp>
 #include <Component/CDH/OBC.h>
 // #include "../../Component/CDH/OBC_Sat0.h"
 // #include "../../Component/CDH/OBC_Sat1.h"
@@ -32,15 +32,8 @@ public:
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
 
 private:
-  // この構成はなんか変な気がするな．．
-  // Sat0
-  // OBC_Sat0* obc0_;
-  OBC* obc0_;
+  OBC* obc_;
   RFSystemTransmitter* rf_sys_transmitter_;
-
-  // Sat1
-  OBC* obc1_;
-  //OBC_Sat1* obc1_;
   RFSystemReceiver* rf_sys_receiver_;
 
   // General information
@@ -51,5 +44,4 @@ private:
   const GlobalEnvironment* glo_env_;
   const RelativeInformation* rel_info_;
   PBD_InterSatComm* pbd_inter_sat_comm_;
-  const int sat_id_;
 };

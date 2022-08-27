@@ -24,7 +24,7 @@ private:
   void InitializeSpacecrafts();
   std::vector<PBD_Sat*> spacecrafts_;
   //MCSimExecutor& mc_sim_;
-  RelativeInformation* rel_info_;
+  RelativeInformation rel_info_;
   PBD_InterSatComm* pbd_inter_sat_comm_;
   PBD_dgps* pbd_;
 };

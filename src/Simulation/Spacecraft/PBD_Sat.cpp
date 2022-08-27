@@ -10,7 +10,6 @@ PBD_Sat::PBD_Sat(SimulationConfig* sim_config, const GlobalEnvironment* glo_env,
 
 PBD_Sat::~PBD_Sat()
 {
-  delete components_;
   delete gnss_observation_;
 }
 
@@ -21,7 +20,7 @@ void PBD_Sat::Initialize(SimulationConfig* sim_config, const GlobalEnvironment* 
 }
 
 void PBD_Sat::LogSetup(Logger & logger)
-{  
+{
   Spacecraft::LogSetup(logger);
   components_->LogSetup(logger);
 }
@@ -32,15 +31,3 @@ void PBD_Sat::Update(const SimTime* sim_time)
   // この更新を毎回すると計算は重そうだが，しょうがないか．<- 実際の観測頻度に合わせてもいいかも
   gnss_observation_->Update();
 }
-
-/*
-void PBD_Sat::GenerateTorque_Nm_b()
-{
-  dynamics_->AddTorque_b(components_->GenerateTorque_Nm_b());
-}
-
-void PBD_Sat::GenerateForce_N_b()
-{
-  dynamics_->AddForce_b(components_->GenerateForce_N_b());
-}
-*/

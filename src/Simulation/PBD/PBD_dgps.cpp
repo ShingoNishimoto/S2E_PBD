@@ -12,7 +12,9 @@
 #define QR (1)
 
 // Kalman Filter method
-#define AKF
+// #define AKF
+
+#undef cross
 
 static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 static const double PBD_DGPS_kConvNm2m = 1e-9;
@@ -28,6 +30,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   libra::Vector<3> velocity_main = main_orbit_.GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_main.velocity(i) = velocity_main[i];
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
+  x_est_main.acc_dyn = Eigen::VectorXd::Zero(3);
   // ambiguity初期化のためのメソッド作るか？
   InitAmbiguity(x_est_main);
 
@@ -38,6 +41,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   libra::Vector<3> velocity_target = target_orbit_.GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) = velocity_target[i];
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
+  x_est_target.acc_dyn = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
 
   x_est_.push_back(x_est_main);
@@ -234,6 +238,13 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     // R
     for (int i = 0; i < observation_dimension; i++) ofs << R(i, i) << ",";
 
+    // acc eci
+    Eigen::Vector3d acc_m_i = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * x_est_main.acceleration; // [nm/s2] // ここの計算が正しいのか要確認！
+    Eigen::Vector3d acc_t_i = TransRTN2ECI(x_est_target.position, x_est_target.velocity)*x_est_target.acceleration; // [nm/s2]
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << acc_m_i(i) << ","; // a_m_i
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << acc_t_i(i) << ","; // a_t_i
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.acc_dyn(i) << ","; // a_dynamics_m
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.acc_dyn(i) << ","; // a_dynamics_t
     ofs << std::endl;
   }
 
@@ -251,11 +262,11 @@ void PBD_dgps::OrbitPropagation()
   Eigen::Vector3d acceleration_target = x_est_target.acceleration;
 
   // ここはcoreの機能を使うように修正
-  std::vector<Eigen::Vector3d> pos_vel_main = RK4(position_main, velocity_main, acceleration_main);
+  std::vector<Eigen::Vector3d> pos_vel_main = RK4(position_main, velocity_main, acceleration_main, x_est_main.acc_dyn);
   position_main = pos_vel_main[0];
   velocity_main = pos_vel_main[1];
 
-  std::vector<Eigen::Vector3d> pos_vel_target = RK4(position_target, velocity_target, acceleration_target);
+  std::vector<Eigen::Vector3d> pos_vel_target = RK4(position_target, velocity_target, acceleration_target, x_est_target.acc_dyn);
   position_target = pos_vel_target[0];
   velocity_target = pos_vel_target[1];
 
@@ -293,28 +304,28 @@ void PBD_dgps::OrbitPropagation()
 }
 
 // Orbitの更新を使えるように修正．位置と速度はRK4で伝搬しているのが，共分散はオイラー法になっている．EKFなので仕方がない．
-std::vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration)
+std::vector<Eigen::Vector3d> PBD_dgps::RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn)
 {
   Eigen::Vector3d k0 = PositionDifferential(velocity);
-  Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration);
+  Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration, acc_dyn);
 
   Eigen::Vector3d tmp_position = position + k0 * step_time / 2.0;
   Eigen::Vector3d tmp_velocity = velocity + l0 * step_time / 2.0;
   Eigen::Vector3d k1 = PositionDifferential(tmp_velocity);
-  Eigen::Vector3d l1 = VelocityDifferential(tmp_position, tmp_velocity, acceleration);
+  Eigen::Vector3d l1 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dyn);
 
   tmp_position = position + k1 * step_time / 2.0;
   tmp_velocity = velocity + l1 * step_time / 2.0;
   Eigen::Vector3d k2 = PositionDifferential(tmp_velocity);
-  Eigen::Vector3d l2 = VelocityDifferential(tmp_position, tmp_velocity, acceleration);
+  Eigen::Vector3d l2 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dyn);
 
   tmp_position = position + k2 * step_time;
   tmp_velocity = velocity + l2 * step_time;
   Eigen::Vector3d k3 = PositionDifferential(tmp_velocity);
-  Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration);
+  Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dyn);
 
-  std::vector<Eigen::Vector3d> position_velocity = 
-  { position + step_time * (k0 + 2.0 * k1 + 2.0 * k2 + k3) / 6.0, 
+  std::vector<Eigen::Vector3d> position_velocity =
+  { position + step_time * (k0 + 2.0 * k1 + 2.0 * k2 + k3) / 6.0,
     velocity + step_time * (l0 + 2.0 * l1 + 2.0 * l2 + l3) / 6.0 };
   return position_velocity;
 }
@@ -324,8 +335,7 @@ Eigen::Vector3d PBD_dgps::PositionDifferential(const Eigen::Vector3d& velocity) 
   return velocity;
 }
 
-// 単位が違うのでそこの変換が必要　
-Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const
+Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn) const
 {
   double r = position.norm();
   double v = velocity.norm();
@@ -337,20 +347,21 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   double ac_norm = - mu_const/position.squaredNorm(); //2体の重力項, squaredNormはnormの2乗
   double tmp_J2_coefficient = 3.0/2.0*mu_const*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); //J2項の係数
 
-  Eigen::Vector3d all_acceleration = position/r;
+  Eigen::Vector3d all_acceleration = position / r * ac_norm;
+  acc_dyn = position / r;
 
-  all_acceleration(0) *= (ac_norm - tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0)));
-  all_acceleration(1) *= (ac_norm - tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0)));
-  all_acceleration(2) *= (ac_norm - tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0)));
+  acc_dyn(0) *= -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0)));
+  acc_dyn(1) *= -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0)));
+  acc_dyn(2) *= -(tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0)));
 
-  all_acceleration -= Cd*v*velocity; //-Cd*V^2*(Vi/V) 大気抵抗
+  acc_dyn -= Cd*v*velocity; //-Cd*V^2*(Vi/V) 大気抵抗
 
-  // ここも変換が必要．
-  
+
+  // ここも座標変換が必要．
   Eigen::MatrixXd acc(3, 1);
   acc.block(0, 0, 3, 1) = acceleration; // RTN
   Eigen::Vector3d acc_eci = TransRTN2ECI(position, velocity)*acc;
-  all_acceleration +=  acc_eci*PBD_DGPS_kConvNm2m; //残りの摂動要素
+  all_acceleration += acc_dyn +  acc_eci*PBD_DGPS_kConvNm2m; //残りの摂動要素
 
   return all_acceleration; // m/s2
 }
@@ -370,7 +381,7 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
 
 
   Eigen::MatrixXd res = Phi * M * Phi.transpose() + Q;
-  // Nのない部分を0に落とす
+  // Nのない部分を0に落とす <- これが必要なのかもあやしい．
   int n_main = gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
   res.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_gnss_channel - n_main, num_of_gnss_channel - n_main) = Eigen::MatrixXd::Zero(num_of_gnss_channel - n_main, num_of_gnss_channel - n_main);
   int n_target = gnss_observations_.at(1).info_.now_observed_gnss_sat_id.size();
@@ -382,10 +393,11 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
 Eigen::MatrixXd PBD_dgps::CalculateSTM(void)
 {
   // Dinamics and Kinematics model
-  Eigen::MatrixXd A_jacobi = CalculateA(x_est_main, x_est_target); //Jacobi行列
+  Eigen::MatrixXd Jacobi_main = CalculateJacobian(x_est_main.position, x_est_main.velocity, x_est_main.acceleration);
+  Eigen::MatrixXd Jacobi_target = CalculateJacobian(x_est_target.position, x_est_target.velocity, x_est_target.acceleration);
   Eigen::MatrixXd A = Eigen::MatrixXd::Zero(state_dimension, state_dimension);
-  A.topLeftCorner(num_of_single_status, num_of_single_status) = A_jacobi.topLeftCorner(num_of_single_status, num_of_single_status);
-  A.block(single_dimension, single_dimension, num_of_single_status, num_of_single_status) = A_jacobi.bottomRightCorner(num_of_single_status, num_of_single_status);
+  A.topLeftCorner(num_of_single_status, num_of_single_status) = Jacobi_main;
+  A.block(single_dimension, single_dimension, num_of_single_status, num_of_single_status) = Jacobi_target;
   // STM
   Eigen::MatrixXd Phi = Eigen::MatrixXd::Identity(state_dimension, state_dimension); // Nのところは単位行列
   Phi += step_time * A;
@@ -399,40 +411,13 @@ Eigen::MatrixXd PBD_dgps::CalculateSTM(void)
   Phi(single_dimension + 3, single_dimension + 3) = 0;
 #endif // CLOCK_IS_WHITE_NOISE
   // a
-  Phi.block(7, 7, 3, 3) = CalculatePhi_a(step_time);
-  Phi.block(single_dimension + 7, single_dimension + 7, 3, 3) = CalculatePhi_a(step_time);
+  Phi.block(7, 7, 3, 3) = CalculatePhi_a(observe_step_time);
+  Phi.block(single_dimension + 7, single_dimension + 7, 3, 3) = CalculatePhi_a(observe_step_time);
   return Phi;
 }
 
-
-// この段階必要ない気がする．
-Eigen::MatrixXd PBD_dgps::CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const
-{
-  Eigen::MatrixXd A_main = CalculateJacobian(x_est_main.position, x_est_main.velocity, x_est_main.acceleration);
-  Eigen::MatrixXd A_target = CalculateJacobian(x_est_target.position, x_est_target.velocity, x_est_target.acceleration);
-  Eigen::MatrixXd A = Eigen::MatrixXd::Zero(num_of_status, num_of_status);
-  A.topLeftCorner(num_of_single_status, num_of_single_status) = A_main;
-  A.bottomRightCorner(num_of_single_status, num_of_single_status) = A_target;
-
-  // Kinematics model 多分これやと誤差大きすぎて無理な気がする．同じようにDynamics使う必要がある．
-  // (dr, dv)
-  // A(num_of_single_status, num_of_single_status + 4)     = 1.0;
-  // A(num_of_single_status + 1, num_of_single_status + 5) = 1.0;
-  // A(num_of_single_status + 2, num_of_single_status + 6) = 1.0;
-  // // (dv, da)
-  // A(num_of_single_status + 4, num_of_single_status + 7) = 1.0 * 1e-9;
-  // A(num_of_single_status + 5, num_of_single_status + 8) = 1.0 * 1e-9;
-  // A(num_of_single_status + 6, num_of_single_status + 9) = 1.0 * 1e-9;
-  // // (dr, da)
-  // A(num_of_single_status, num_of_single_status + 7) = 1.0 * 1e-9* step_time/2;
-  // A(num_of_single_status + 1, num_of_single_status + 8) = 1.0 * 1e-9* step_time/2;
-  // A(num_of_single_status + 2, num_of_single_status + 9) = 1.0 * 1e-9* step_time/2;
-
-  return A;
-}
-
 Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const
-{ 
+{
   double r = position.norm(); // [m]
   double v = velocity.norm(); // [m/s]
   double a = acceleration.norm(); // [nm/s]
@@ -456,10 +441,10 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
   A(6, 1) = 3.0 * mu_const * y * z / pow(r, 5.0) - J2_coefficient * (-15.0 * y * z / pow(r, 7.0) + 35.0 * y * z * z * z / pow(r, 9.0));
   A(6, 2) = 3.0 * mu_const * z * z / pow(r, 5.0) - mu_const / pow(r, 3.0) - J2_coefficient * (3.0 / pow(r, 5.0) - 30.0 * z * z / pow(r, 7.0) + 35.0 * pow(z, 4.0) / pow(r, 9.0));
 
-  // これ速度に入る？普通は加速度として入ってくるはず
-  // A(4, 4) = -Cd * (vx * vx / v + v);    A(4, 5) = -Cd * vx * vy / v;    A(4, 6) = -Cd * vx * vz / v;
-  // A (5, 4) = -Cd * vx * vy / v;    A(5, 5) = -Cd * (vy * vy / v + v);    A(5, 6) = -Cd * vy * vz / v;
-  // A(6, 4) = -Cd * vx * vz / v;    A(6, 5) = -Cd * vy * vz / v;    A(6, 6) = -Cd * (vz * vz / v + v);
+  // 空気抵抗分
+  A(4, 4) = -Cd * (vx * vx / v + v);    A(4, 5) = -Cd * vx * vy / v;    A(4, 6) = -Cd * vx * vz / v;
+  A(5, 4) = -Cd * vx * vy / v;    A(5, 5) = -Cd * (vy * vy / v + v);    A(5, 6) = -Cd * vy * vz / v;
+  A(6, 4) = -Cd * vx * vz / v;    A(6, 5) = -Cd * vy * vz / v;    A(6, 6) = -Cd * (vz * vz / v + v);
 
   // (v, a)
   Eigen::Matrix3d rtn2eci = TransRTN2ECI(position, velocity);
@@ -473,15 +458,12 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
 
 Eigen::Matrix3d PBD_dgps::TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
 {
-  Eigen::MatrixXd rtn_r(3, 1);
-  for (int i = 0; i < 3;++i) rtn_r(i, 0) = position(i) / position.norm();
-  Eigen::MatrixXd rtn_t(3, 1);
-  for (int i = 0; i < 3; ++i) rtn_t(i, 0) = velocity(i) / velocity.norm();
-  // Eigen::Vector3d rtn_n = rtn_r.cross(rtn_t); // cross使えんのクソ
-  Eigen::MatrixXd rtn_n(3, 1);
-  rtn_n(0, 0) = rtn_r(1, 0) * rtn_t(2, 0) - rtn_r(2, 0) * rtn_t(1, 0);
-  rtn_n(1, 0) = rtn_r(2, 0) * rtn_t(0, 0) - rtn_r(0, 0) * rtn_t(2, 0);
-  rtn_n(2, 0) = rtn_r(0, 0) * rtn_t(1, 0) - rtn_r(1, 0) * rtn_t(0, 0);
+  Eigen::Vector3d rtn_r(3);
+  for (int i = 0; i < 3;++i) rtn_r(i) = position(i) / position.norm();
+  Eigen::Vector3d rtn_t(3);
+  for (int i = 0; i < 3; ++i) rtn_t(i) = velocity(i) / velocity.norm();
+  Eigen::Vector3d rtn_n = rtn_r.cross(rtn_t); // cross使えんのクソ
+
   rtn_n /= rtn_n.norm();
   Eigen::MatrixXd RTN2ECI(3,3);
   RTN2ECI.block(0, 0, 3, 1) = rtn_r;
@@ -508,14 +490,16 @@ void PBD_dgps::CalculateQ(void)
   Q.block(4, 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity() * pow(step_time, 2.0);
   Q.block(single_dimension, single_dimension, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity() * pow(step_time, 2.0);
   Q.block(single_dimension + 4, single_dimension + 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity() * pow(step_time, 2.0);
-  // N process <- ここやる！！！！
+  // N process
+  Q.block(10, 10, num_of_gnss_channel, num_of_gnss_channel) = sigma_N_process * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
+  Q.block(10 + single_dimension, 10 + single_dimension, num_of_gnss_channel, num_of_gnss_channel) = sigma_N_process * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
 }
 
 // Process noiseのvarianceを計算．Bを使う形に修正．
 Eigen::MatrixXd PBD_dgps::CalculateQ_at(void)
 {
   Eigen::MatrixXd Q_at = Eigen::MatrixXd::Zero(8, 8);
-  double phi = exp(-step_time / tau_a);
+  double phi = exp(-observe_step_time / tau_a);
   double q_acc_r = pow(sigma_acc_r_process, 2.0) * (1 - pow(phi, 2.0));
   double q_acc_t = pow(sigma_acc_t_process, 2.0) * (1 - pow(phi, 2.0));
   double q_acc_n = pow(sigma_acc_n_process, 2.0) * (1 - pow(phi, 2.0));
@@ -530,16 +514,12 @@ Eigen::MatrixXd PBD_dgps::CalculateQ_at(void)
   // for(int i = 0;i < 3;++i) Q(i, i) = pow(sigma_r_process, 2.0);
   Q_at(0, 0) = q_cdt;
   // for(int i = 4;i < 7;++i) Q(i, i) = pow(sigma_v_process, 2.0);
-  Q_at(1, 1) = q_acc_r;
-  Q_at(2, 2) = q_acc_t;
-  Q_at(3, 3) = q_acc_n;
+  Q_at(1, 1) = q_acc_r; Q_at(2, 2) = q_acc_t; Q_at(3, 3) = q_acc_n;
   // for (int i = num_of_single_status; i < n_main + num_of_single_status; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
   // for (int i = num_of_single_status; i < num_of_single_status + 3; ++i) Q(i, i) = pow(sigma_r_process, 2.0);
   Q_at(4, 4) = q_cdt;
   // for (int i = num_of_single_status + 4; i < num_of_single_status + 7; ++i) Q(i, i) = pow(sigma_v_process, 2.0);
-  Q_at(5, 5) = q_acc_r;
-  Q_at(6, 6) = q_acc_t;
-  Q_at(7, 7) = q_acc_n;
+  Q_at(5, 5) = q_acc_r; Q_at(6, 6) = q_acc_t; Q_at(7, 7) = q_acc_n;
   // for (int i = num_of_single_status + single_offset; i < num_of_status + n_main + n_common; ++i) Q(i, i) = pow(sigma_N_process, 2.0);
 
   return Q_at;
@@ -558,13 +538,12 @@ void PBD_dgps::KalmanFilter()
 {
   // gnss_observed_hoge の観測される時間はどうなっているのか？
   // int n_common = common_observed_gnss_sat_id.size();
-  
+
   // GRAPHIC*2 + SDCPにする．
   Eigen::VectorXd z = Eigen::VectorXd::Zero(observation_dimension); //観測ベクトル
   Eigen::VectorXd h_x = Eigen::VectorXd::Zero(observation_dimension); // 観測モデル行列
 
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(observation_dimension, state_dimension); //観測行列（dhx/dx）
-  // Oneにしている部分がどう効いてくるのかの確認は必要．
   Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(observation_dimension, 1); // 観測誤差共分散．
   UpdateObservations(z, h_x, H, R_V);
 
@@ -588,7 +567,6 @@ void PBD_dgps::KalmanFilter()
   x_predict.block(3, 0, 1, 1) = x_est_main.clock;
   x_predict.block(4, 0, 3, 1)  = x_est_main.velocity;
   x_predict.block(7, 0, 3, 1) = x_est_main.acceleration;
-  // Nを連続に保持してないのでMapは使えない．
   x_predict.block(10, 0, num_of_gnss_channel, 1) = Eigen::Map<Eigen::VectorXd>(&x_est_main.ambiguity.N[0], x_est_main.ambiguity.N.size());
   //x_predict(10) = Cd;
   x_predict.block(single_dimension, 0, 3, 1) = x_est_target.position;
@@ -666,7 +644,7 @@ void PBD_dgps::KalmanFilter()
   offset = single_dimension + num_of_single_status + n_target;
   size = num_of_gnss_channel - n_target;
   M.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
-  
+
   // others
   for (int i = 0; i < num_of_single_status; ++i)
   {
@@ -826,7 +804,6 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   // Ambiguity
   H(row_offset, col_offset) = 0.5 * x_est.lambda; // GRAPHIC N
   Rv(row_offset) = pow(pseudo_sigma / 2.0, 2.0) + pow(carrier_sigma / 2.0, 2.0);
-  // Rv(row_offset) = pow(pseudo_sigma, 2.0); // 少し大きめ
 };
 
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
@@ -844,10 +821,10 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   // とりあえずL1を使う．
   // main
   const auto& carrier_phase_main = gnss_observations_.at(0).observed_values_.L1_carrier_phase.at(main_index);
-  double carrier_phase_range_main = (carrier_phase_main.first + carrier_phase_main.second) * x_est_.at(0).lambda;
+  double carrier_phase_range_main = (carrier_phase_main.first + carrier_phase_main.second) * x_est_main.lambda; // FIXME: x_est_をmaster情報にできるように修正する．
   // target
   const auto& carrier_phase_target = gnss_observations_.at(1).observed_values_.L1_carrier_phase.at(target_index);
-  double carrier_phase_range_target = (carrier_phase_target.first + carrier_phase_target.second) * x_est_.at(1).lambda;
+  double carrier_phase_range_target = (carrier_phase_target.first + carrier_phase_target.second) * x_est_target.lambda;
 
   auto gnss_position = gnss_observations_.at(0).observed_values_.gnss_satellites_position.at(main_index);
 
@@ -863,8 +840,8 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   H(row_offset, 3) = -1.0;
   H(row_offset, single_dimension + 3) = 1.0;
   // Ambiguity
-  H(row_offset, col_offset_main) = -1.0 * x_est_.at(0).lambda; // SDCP N
-  H(row_offset, col_offset_target) = 1.0 * x_est_.at(1).lambda; // SDCP N
+  H(row_offset, col_offset_main) = -1.0 * x_est_main.lambda; // SDCP N
+  H(row_offset, col_offset_target) = 1.0 * x_est_target.lambda; // SDCP N
   Rv(row_offset) = pow(sqrt(2.0) * carrier_sigma, 2.0);
 };
 

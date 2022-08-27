@@ -3,7 +3,7 @@
 
 PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
-  rel_info_ = new RelativeInformation();
+  rel_info_ = RelativeInformation();
   pbd_inter_sat_comm_ = new PBD_InterSatComm(&sim_config_);
 }
 
@@ -13,7 +13,6 @@ PBD_Case::~PBD_Case()
   {
     delete spacefraft;
   }
-  delete rel_info_;
   delete pbd_inter_sat_comm_;
 }
 
@@ -25,27 +24,7 @@ void PBD_Case::InitializeSpacecrafts()
 
   for (int sat_id = 0; sat_id < sim_config_.num_of_simulated_spacecraft_; sat_id++)
   {
-    auto orbit_conf = IniAccess(sim_config_.sat_file_[sat_id]); // FIXME: ここにあるのは使いにくい．
-    char* section = "ORBIT";
-    Orbit::PROPAGATE_MODE propagate_mode = Orbit::PROPAGATE_MODE(orbit_conf.ReadInt(section, "propagate_mode"));
-
-    if (propagate_mode == Orbit::PROPAGATE_MODE::RELATIVE_ORBIT)
-    {
-      // Memorize the IDs of satellites that use RelativeOrbit, but do not instantiate FFSat
-      relative_orbit_sat_id.push_back(sat_id);
-    }
-    else
-    {
-      // For satellites that do not use RelativeOrbit, instantiate as usual
-      PBD_Sat* spacecraft = new PBD_Sat(&sim_config_, glo_env_, rel_info_, pbd_inter_sat_comm_, sat_id);
-      spacecrafts_.push_back(spacecraft);
-    }
-  }
-
-  // Then, instantiate satellites that use RelativeOrbit
-  for (auto sat_id : relative_orbit_sat_id)
-  {
-    PBD_Sat* spacecraft = new PBD_Sat(&sim_config_, glo_env_, rel_info_, pbd_inter_sat_comm_, sat_id);
+    PBD_Sat* spacecraft = new PBD_Sat(&sim_config_, glo_env_, &rel_info_, pbd_inter_sat_comm_, sat_id);
     spacecrafts_.push_back(spacecraft);
   }
 }
@@ -57,7 +36,6 @@ void PBD_Case::Initialize()
   
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
-  rel_info_->LogSetup(*(sim_config_.main_logger_));
   for (auto& spacecraft : spacecrafts_)
   {
     spacecraft->LogSetup(*(sim_config_.main_logger_));
@@ -69,7 +47,6 @@ void PBD_Case::Initialize()
   //Start the simulation
   std::cout << "\nSimulationDateTime \n";
   glo_env_->GetSimTime().PrintStartDateTime();
-
 }
 
 void PBD_Case::Main()
@@ -82,6 +59,7 @@ void PBD_Case::Main()
     {
       sim_config_.main_logger_->WriteValues();
     }
+
     // Global Environment Update
     glo_env_->Update();
     // Spacecraft Update
@@ -89,9 +67,7 @@ void PBD_Case::Main()
     {
       // 実際はここの中でGNSS観測情報の更新をしたい．
       spacecraft->Update(&(glo_env_->GetSimTime()));
-      // spacecraft->Clear(); //Zero clear force and torque for dynamics
     }
-    // 軌道のupdateができてるかどうか確認した方がいい
     pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
@@ -104,21 +80,13 @@ void PBD_Case::Main()
 std::string PBD_Case::GetLogHeader() const
 {
   std::string str_tmp = "";
-  str_tmp += WriteScalar("time", "s");
-  for (auto& spacecraft : spacecrafts_)
-  {
-    str_tmp += WriteVector("Sat" + std::to_string(spacecraft->GetSatID()) + "_Omega", "b", "rad/s", 3);
-  }
+
   return str_tmp;
 }
 
 std::string PBD_Case::GetLogValue() const
 {
   std::string str_tmp = "";
-  str_tmp += WriteScalar(glo_env_->GetSimTime().GetElapsedSec());
-  for (auto& spacecraft : spacecrafts_)
-  {
-    str_tmp += WriteVector(spacecraft->GetDynamics().GetAttitude().GetOmega_b(), 3);
-  }
+
   return str_tmp;
 }
