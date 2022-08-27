@@ -138,7 +138,7 @@ set(SOURCE_FILES
   src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
 )
 # Create executable file
-add_executable(${PROJECT_NAME} ${SOURCE_FILES} "src/Simulation/PBD/PBD_lambda.h" "src/Simulation/PBD/PBD_lambda.cpp")
+add_executable(${PROJECT_NAME} ${SOURCE_FILES})
 # Compile option
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PUBLIC "/W4")
@@ -235,4 +235,4 @@ endif()
 message("Cspice_LIB:  "${CSPICE_LIB})
 message("nrlmsise00_LIB:  "${NRLMSISE00_LIB})
 
-include(common.cmake)
+include(${S2E_CORE_DIR}/common.cmake)

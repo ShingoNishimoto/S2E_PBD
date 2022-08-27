@@ -1,7 +1,7 @@
 #include "OBC_Sat0.h"
 #include "../../Simulation/Spacecraft/PBD_Components.h"
 
-OBC_Sat0::OBC_Sat0(ClockGenerator* clock_gen, PBD_Components& components) : OBC(clock_gen), components_(components)
+OBC_Sat0::OBC_Sat0(ClockGenerator* clock_gen) : OBC(clock_gen)
 {
   Initialize();
 }

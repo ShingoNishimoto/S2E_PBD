@@ -39,6 +39,7 @@ public:
     Eigen::Vector3d velocity;
     //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
     Eigen::Vector3d acceleration; // 経験加速度
+    Eigen::Vector3d acc_dyn; // ダイナミクスによる加速度（ログ用）
     Ambiguity ambiguity;
     // Eigen::VectorXd N; // [cycle] ambiguity <- これだけやとGNSS衛星IDとの対応が取れなくてキモイ．
     const double lambda = L1_lambda; // wave length [m]
@@ -80,7 +81,7 @@ private:
 
   // Eigen::VectorXd x_true; // 状態量真値 for log
   // シンプルにここが参照になっていないからか．
-  std::vector<EstimatedVariables> x_est_{}; // 状態量ベクトル
+  std::vector<EstimatedVariables> x_est_; // 状態量ベクトル
 
   // gnss_sat_id <-> indexの変換が簡単にできるようにしたい．
 
@@ -99,7 +100,7 @@ private:
     //ここら辺も構造体にまとめるか．
     std::vector<bool> common_observed_status{};
     std::vector<int> common_observed_gnss_sat_id{};
-    
+
     // now, preが必要か？
     /*
     std::map<const int, int> pre_main_observing_ch; // <ch, gnss_sat_id>
@@ -117,6 +118,7 @@ private:
     Eigen::MatrixXd Q;
     Eigen::MatrixXd R;
 
+// この辺は全てマクロにする．
     const int num_of_single_status = 10;
     const int num_of_status = 20;
     const int num_of_gnss_channel = 12; // max receivable gnss number
@@ -128,14 +130,13 @@ private:
     double observe_step_time = 10.0;
     double log_step_time = 1.0;
     void InitAmbiguity(EstimatedVariables& x_est);
-    std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration);
+    std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn);
     Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
-    Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration) const;
+    Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn) const;
     // for differential
     Eigen::MatrixXd UpdateM();
     // Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
     // for differential
-    Eigen::MatrixXd CalculateA(const EstimatedVariables& x_est_main, const EstimatedVariables& x_est_target) const;
     Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
     Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
     Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．

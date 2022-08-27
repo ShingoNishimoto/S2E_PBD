@@ -16,20 +16,20 @@ const double sigma_acc_r_ini = 1000; // 150; //[nm/s^2]
 const double sigma_acc_t_ini = 2000; // 300; //[nm/s^2]
 const double sigma_acc_n_ini = 750; // 200;  //[nm/s^2]
 const double sigma_cdt_ini   = 100;    //[m]
-const double sigma_N_ini     = 0.2;   //[m]
+const double sigma_N_ini     = 1.0;   //[cycle]
 // observation noise
 const double pseudo_sigma    = 0.25; //[m]
 const double carrier_sigma   = 5*1e-3; //[m]
 // process noise
 const double sigma_r_process = 0;    //[m]
-const double sigma_v_process = 0;    //[m/s] 
+const double sigma_v_process = 0;    //[m/s]
 const double sigma_acc_r_process = 200; // 15;    //[nm/s^2]
 const double sigma_acc_t_process = 500; // 30;   //[nm/s^2]
 const double sigma_acc_n_process = 100; // 20;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
 const double sigma_cdt_process   = 5;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
-const double sigma_N_process     = 0.02;    //[m]
+const double sigma_N_process     = 0.10;    //[cycle]
 // clock noise model parameters of receiver
 const double clock_sigma     = 5;  //[m] 0.1 で<- 0.1nsくらいになる．これは今white noiseになっている．
 
@@ -38,7 +38,7 @@ const double J2_const = 1.082636e-3; //無次元 重力J2項
 const double Earth_Radius = 6378136.6; //m
 
 const double tau_a = 900;
-const double tau_cdt = 60;
+const double tau_cdt = 100;
 
 // for Adaptive Kalman Filter
 const double alpha = 0.3; // forgetting factor
