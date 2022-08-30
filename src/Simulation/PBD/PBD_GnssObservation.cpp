@@ -43,6 +43,7 @@ void PBD_GnssObservation::UpdateGnssObservation()
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 更新 <- ?
   libra::Vector<3> sat_position_i = orbit_.GetSatPosition_i(); // ECI
 
+  info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_gnss_sat_id.clear(); //クリア
   ClearPreValues(true_values_);
   ClearPreValues(observed_values_);
@@ -76,6 +77,7 @@ void PBD_GnssObservation::UpdateGnssObservation()
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
     double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
     double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
+    // この中に整数不定性を入れてないのがダメなのでは？
     auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
     auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
 
