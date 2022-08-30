@@ -33,4 +33,5 @@ extern const double Earth_Radius; //m
 extern const double tau_a; //[s]
 extern const double tau_cdt; //[s]
 
+extern const double alpha; // forgetting factor
 #endif

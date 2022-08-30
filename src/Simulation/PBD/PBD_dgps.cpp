@@ -12,7 +12,7 @@
 #define QR (1)
 
 // Kalman Filter method
-// #define AKF
+#define AKF
 
 #undef cross
 
@@ -66,7 +66,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   std::normal_distribution<> acc_r_dist(0.0, sigma_acc_r_ini);
   std::normal_distribution<> acc_t_dist(0.0, sigma_acc_t_ini);
   std::normal_distribution<> acc_n_dist(0.0, sigma_acc_n_ini);
-  std::normal_distribution<> N_dist(0.0, sigma_N_ini/L1_lambda);
+  std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
   // Vって名前は変えた方がいいかも
   Eigen::VectorXd V = Eigen::VectorXd::Constant(state_dimension, 0);
@@ -79,7 +79,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   V(8) = pow(sigma_acc_t_ini, 2.0);
   V(9) = pow(sigma_acc_n_ini, 2.0);
   // 初期は全部に入れている．
-  for (int i = 0; i < num_of_gnss_channel; ++i) V(num_of_single_status + i) = pow(sigma_N_ini/x_est_main.lambda, 2.0); // N
+  for (int i = 0; i < num_of_gnss_channel; ++i) V(num_of_single_status + i) = pow(sigma_N_ini, 2.0); // N
   // 以下がtarget
   for (int i = 0; i < 3; ++i) V(single_dimension + i) = pow(sigma_r_ini, 2.0);
   V(single_dimension + 3) = pow(sigma_cdt_ini, 2.0);
@@ -87,7 +87,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   V(single_dimension + 7) = pow(sigma_acc_r_ini, 2.0);
   V(single_dimension + 8) = pow(sigma_acc_t_ini, 2.0);
   V(single_dimension + 9) = pow(sigma_acc_n_ini, 2.0);
-  for (int i = 0; i < num_of_gnss_channel; ++i) V(single_dimension + num_of_single_status + i) = pow(sigma_N_ini/x_est_target.lambda, 2.0); // N
+  for (int i = 0; i < num_of_gnss_channel; ++i) V(single_dimension + num_of_single_status + i) = pow(sigma_N_ini, 2.0); // N
 
   M = V.asDiagonal(); // 誤差分散共分散行列M
 
@@ -126,7 +126,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   ofs_ini_txt << "initial velocity dist: " << sigma_v_ini << std::endl;
   ofs_ini_txt << "initial acceleration dist: " << sigma_acc_r_ini << std::endl;
   ofs_ini_txt << "initial clock dist: " << sigma_cdt_ini << std::endl;
-  ofs_ini_txt << "initial ambiguity dist[m]: " << sigma_N_ini << std::endl;
+  ofs_ini_txt << "initial ambiguity dist[cycle]: " << sigma_N_ini << std::endl;
   ofs_ini_txt << "pseudo dist: " << pseudo_sigma << std::endl;
   ofs_ini_txt << "carrier dist: " << carrier_sigma << std::endl;
   ofs_ini_txt << "clock dist: " << clock_sigma << std::endl;
@@ -136,7 +136,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   ofs_ini_txt << "process noise of tangential acceleration: " << sigma_acc_t_process << std::endl;
   ofs_ini_txt << "process noise of north acceleration: " << sigma_acc_n_process << std::endl;
   ofs_ini_txt << "process noise of clock: " << sigma_cdt_process << std::endl;
-  ofs_ini_txt << "process noise of ambiguity[m]: " << sigma_N_process << std::endl;
+  ofs_ini_txt << "process noise of ambiguity[cycle]: " << sigma_N_process << std::endl;
   ofs_ini_txt << "time const. acceleration: " << tau_a << std::endl;
   ofs_ini_txt << "time const. clock: " << tau_cdt << std::endl;
   ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << std::endl; // FIXME
@@ -374,7 +374,7 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
   Eigen::MatrixXd Phi = CalculateSTM();
 
 #ifdef AKF
-  // ここでは更新しない． TODO: これが良くないのかも？
+  // ここでは更新しない．
 #else
   CalculateQ();
 #endif // AKF
@@ -384,8 +384,10 @@ Eigen::MatrixXd PBD_dgps::UpdateM()
   // Nのない部分を0に落とす <- これが必要なのかもあやしい．
   int n_main = gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
   res.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_gnss_channel - n_main, num_of_gnss_channel - n_main) = Eigen::MatrixXd::Zero(num_of_gnss_channel - n_main, num_of_gnss_channel - n_main);
+  Q.block(num_of_single_status + n_main, num_of_single_status + n_main, num_of_gnss_channel - n_main, num_of_gnss_channel - n_main) = Eigen::MatrixXd::Zero(num_of_gnss_channel - n_main, num_of_gnss_channel - n_main);
   int n_target = gnss_observations_.at(1).info_.now_observed_gnss_sat_id.size();
   res.block(single_dimension + num_of_single_status + n_target, single_dimension + num_of_single_status + n_target, num_of_gnss_channel - n_target, num_of_gnss_channel - n_target) = Eigen::MatrixXd::Zero(num_of_gnss_channel - n_target, num_of_gnss_channel - n_target);
+  Q.block(single_dimension + num_of_single_status + n_target, single_dimension + num_of_single_status + n_target, num_of_gnss_channel - n_target, num_of_gnss_channel - n_target) = Eigen::MatrixXd::Zero(num_of_gnss_channel - n_target, num_of_gnss_channel - n_target);
 
   return res;
 }
@@ -491,8 +493,8 @@ void PBD_dgps::CalculateQ(void)
   Q.block(single_dimension, single_dimension, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity() * pow(step_time, 2.0);
   Q.block(single_dimension + 4, single_dimension + 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity() * pow(step_time, 2.0);
   // N process
-  Q.block(10, 10, num_of_gnss_channel, num_of_gnss_channel) = sigma_N_process * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
-  Q.block(10 + single_dimension, 10 + single_dimension, num_of_gnss_channel, num_of_gnss_channel) = sigma_N_process * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
+  Q.block(10, 10, num_of_gnss_channel, num_of_gnss_channel) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
+  Q.block(10 + single_dimension, 10 + single_dimension, num_of_gnss_channel, num_of_gnss_channel) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(num_of_gnss_channel, num_of_gnss_channel) * pow(step_time, 2.0);
 }
 
 // Process noiseのvarianceを計算．Bを使う形に修正．
@@ -537,7 +539,6 @@ Eigen::MatrixXd PBD_dgps::CalculatePhi_a(const double dt)
 void PBD_dgps::KalmanFilter()
 {
   // gnss_observed_hoge の観測される時間はどうなっているのか？
-  // int n_common = common_observed_gnss_sat_id.size();
 
   // GRAPHIC*2 + SDCPにする．
   Eigen::VectorXd z = Eigen::VectorXd::Zero(observation_dimension); //観測ベクトル
@@ -547,7 +548,24 @@ void PBD_dgps::KalmanFilter()
   Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(observation_dimension, 1); // 観測誤差共分散．
   UpdateObservations(z, h_x, H, R_V);
 
+  int n_main = gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
+  int offset = n_main;
+  int size = num_of_gnss_channel - n_main;
+  int n_target = gnss_observations_.at(1).info_.now_observed_gnss_sat_id.size();
+  int n_common = common_observed_gnss_sat_id.size();
+
+// #ifdef AKF
+//   // Rは更新しない．
+//   R.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+//   offset = num_of_gnss_channel + n_target;
+//   size = num_of_gnss_channel - n_target;
+//   R.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+//   offset = 2*num_of_gnss_channel + n_common;
+//   size = num_of_gnss_channel - n_common;
+//   R.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+// #else
   R = R_V.asDiagonal();
+// #endif
 
   Eigen::MatrixXd hmh = H * M * H.transpose();
   /*
@@ -599,7 +617,17 @@ void PBD_dgps::KalmanFilter()
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(state_dimension, state_dimension);
   tmp = (I - K*H);
   M = tmp*M*tmp.transpose() + K*R*K.transpose(); // 負になるのが存在しているが，これは何？
-  // M = (I - K * H) * M; // Mの観測更新がうまくいっていない．落ちすぎている．
+
+  // 数値誤差で発散してしまったやつを処理．
+  offset = num_of_single_status + n_main;
+  size = num_of_gnss_channel - n_main;
+  M.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+  Q.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+  offset = single_dimension + num_of_single_status + n_target;
+  size = num_of_gnss_channel - n_target;
+  M.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+  Q.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
+
 #ifdef AKF
   // residual
   // GRAPHIC*2 + SDCPにする．
@@ -610,11 +638,8 @@ void PBD_dgps::KalmanFilter()
   // Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(observation_dimension, 1); // 観測誤差共分散．
   UpdateObservations(z, h_x_post, H, R_V);
   Eigen::VectorXd E_post = z - h_x_post;
-  const double alpha = 0.3;
   R = alpha * R + (1 - alpha) * (E_post*E_post.transpose() + H*M*H.transpose()); // residual based R-adaptation
   Eigen::MatrixXd Q_dash = alpha * Q + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q-adaptation
-  // 一旦ここまででやってみる．
-  // このままするとr, vの成分にもprocess noiseが入ってしまって精度劣化していそう．
   // Q = Q_dash;
   DynamicNoiseScaling(Q_dash, CalculateSTM(), H);
 /*
@@ -631,28 +656,19 @@ void PBD_dgps::KalmanFilter()
   for (int i = 0; i < num_of_gnss_channel; ++i)
   {
     int N_offset = num_of_single_status + i;
-    if (M(N_offset, N_offset) < 0) M(N_offset, N_offset) = pow(sigma_N_ini/x_est_main.lambda, 2.0); // sqrt(pow(M(N_offset, N_offset), 2.0));
+    if (M(N_offset, N_offset) < 0) M(N_offset, N_offset) = pow(sigma_N_ini, 2.0); // sqrt(pow(M(N_offset, N_offset), 2.0));
     N_offset = single_dimension + num_of_single_status + i;
-    if (M(N_offset, N_offset) < 0) M(N_offset, N_offset) = pow(sigma_N_ini/x_est_target.lambda, 2.0); // sqrt(pow(M(N_offset, N_offset), 2.0));
+    if (M(N_offset, N_offset) < 0) M(N_offset, N_offset) = pow(sigma_N_ini, 2.0); // sqrt(pow(M(N_offset, N_offset), 2.0));
   }
-  // 数値誤差で発散してしまったやつを処理しないと．
-  int n_main = gnss_observations_.at(0).info_.now_observed_gnss_sat_id.size();
-  int offset = num_of_single_status + n_main;
-  int size = num_of_gnss_channel - n_main;
-  M.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
-  int n_target = gnss_observations_.at(1).info_.now_observed_gnss_sat_id.size();
-  offset = single_dimension + num_of_single_status + n_target;
-  size = num_of_gnss_channel - n_target;
-  M.block(offset, offset, size, size) = Eigen::MatrixXd::Zero(size, size);
 
   // others
-  for (int i = 0; i < num_of_single_status; ++i)
-  {
-    int offset = i;
-    if (M(offset, offset) < 1e-6) M(offset, offset) = sqrt(pow(M(offset, offset), 2.0));
-    offset = single_dimension + i;
-    if (M(offset, offset) < 1e-6) M(offset, offset) = sqrt(pow(M(offset, offset), 2.0));
-  }
+  // for (int i = 0; i < num_of_single_status; ++i)
+  // {
+  //   int offset = i;
+  //   if (M(offset, offset) < 1e-6) M(offset, offset) = sqrt(pow(M(offset, offset), 2.0));
+  //   offset = single_dimension + i;
+  //   if (M(offset, offset) < 1e-6) M(offset, offset) = sqrt(pow(M(offset, offset), 2.0));
+  // }
 
   // TODO: make the Double Differential ambiguity
 
@@ -1017,13 +1033,13 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
       //   cout << "now index something is wrong 1" << std::endl;
       //   abort();
       // }
-      std::normal_distribution<> N_dist(0.0, sigma_N_ini/x_est.lambda);
+      std::normal_distribution<> N_dist(0.0, sigma_N_ini);
       x_est.ambiguity.N.at(now_index) = N_dist(mt); // こいつもGauss Makov過程にした方がいいらしい?
       int offset = sat_id * single_dimension + num_of_single_status + now_index;
       // 行と列に関してもリセット
       M.block(0, offset, state_dimension, 1) = Eigen::MatrixXd::Zero(state_dimension, 1);
       M.block(offset, 0, 1, state_dimension) = Eigen::MatrixXd::Zero(1, state_dimension);
-      M(offset, offset) = pow(sigma_N_ini / x_est.lambda, 2.0);
+      M(offset, offset) = pow(sigma_N_ini, 2.0);
       ++now_index;
     }
     // 引き継ぐ
@@ -1087,7 +1103,7 @@ double PBD_dgps::CalculateCarrierPhase(const EstimatedVariables& x_est, libra::V
   double res = 0.0;
   res = CalculateGeometricRange(x_est.position, gnss_position);
   res += x_est.clock(0) - gnss_clock;
-  res -= lambda * integer_bias;
+  res += lambda * integer_bias;
   // res += integer_bias;
   // 観測ノイズ
   std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
