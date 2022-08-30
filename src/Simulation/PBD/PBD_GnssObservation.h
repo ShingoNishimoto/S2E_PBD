@@ -61,7 +61,7 @@ public:
   GnssObservedValues true_values_; // trueは要らんかも
   GnssObservedValues observed_values_;
   GnssObserveInfo info_;
-  int num_of_gnss_satellites_; // というかこれはここに要らんのでは？
+  int num_of_gnss_satellites_;
   std::vector<double> l1_bias_{};
   std::vector<double> l2_bias_{};
 

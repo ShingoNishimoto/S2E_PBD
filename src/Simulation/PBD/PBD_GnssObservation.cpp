@@ -19,7 +19,7 @@ bool GnssObservedValues::check_normal()
 PBD_GnssObservation::PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites) : orbit_(orbit), gnss_satellites_(gnss_satellites)
 {
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites();
-  // ‰Šú‰»
+  // åˆæœŸåŒ–
   info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
@@ -33,51 +33,40 @@ void PBD_GnssObservation::Update(void)
   // receiver clock
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
   receiver_clock_bias_ = receiver_clock_dist(mt);
-  // ‚±‚±‚Å–ˆ‰ñŒÄ‚Ô‚Æ‹O“¹î•ñ‚ªXV‚³‚ê‚Ä‚È‚­‚Ä€‚ÊD
+  // ã“ã“ã§æ¯å›å‘¼ã¶ã¨è»Œé“æƒ…å ±ãŒæ›´æ–°ã•ã‚Œã¦ãªãã¦æ­»ã¬ï¼
   UpdateGnssObservation();
 }
 
 void PBD_GnssObservation::UpdateGnssObservation()
 {
-  //„’è’l‚ÌŒvZ
-  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // XV <- ?
+  //æ¨å®šå€¤ã®è¨ˆç®—
+  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // æ›´æ–° <- ?
   libra::Vector<3> sat_position_i = orbit_.GetSatPosition_i(); // ECI
 
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
-  info_.now_observed_gnss_sat_id.clear(); //ƒNƒŠƒA
+  info_.now_observed_gnss_sat_id.clear(); //ã‚¯ãƒªã‚¢
   ClearPreValues(true_values_);
   ClearPreValues(observed_values_);
 
   for (int gnss_sat_id = 0; gnss_sat_id < num_of_gnss_satellites_; ++gnss_sat_id) {
-    //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; @©‚±‚Ì‰q¯‚½‚¿‚Ì‹O“¹î•ñ‚ªˆ«‚¢‚©‚ç‚±‚¤‚µ‚Ä‚¢‚½‚Ì‚©H
+    //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; ã€€â†ã“ã®è¡›æ˜ŸãŸã¡ã®è»Œé“æƒ…å ±ãŒæ‚ªã„ã‹ã‚‰ã“ã†ã—ã¦ã„ãŸã®ã‹ï¼Ÿ
     if (!gnss_satellites_.GetWhetherValid(gnss_sat_id)) continue;
     libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
     bool see_flag = CheckCanSeeSatellite(sat_position_i, gnss_position);
-    // init
-    // main_index_dict.insert(std::make_pair(gnss_sat_id, -1));
-    // common_index_dict.insert(std::make_pair(gnss_sat_id, -1));
 
     if (!see_flag)
     {
-      // pre_main_observing_ch = now_main_observing_ch;
-      // RemoveFromCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
       continue;
     }
     info_.now_observed_status.at(gnss_sat_id) = true;
     info_.now_observed_gnss_sat_id.push_back(gnss_sat_id);
-    int observed_gnss_index = info_.now_observed_gnss_sat_id.size() - 1;
-    /*
-    if (sat_id == 0)
-    {
-      // main_index_dict.at(gnss_sat_id) = observed_gnss_index;
-      // pre_main_observing_ch = now_main_observing_ch;
-      //AllocateToCh(gnss_sat_id, now_main_observing_ch, main_free_ch);
-    }
-    */
-    double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // ‚±‚ê‚Íclock bias
+
+    double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // ã“ã‚Œã¯clock bias
+
+    // ä»¥ä¸‹ã§è¡›æ˜Ÿä½ç½®ã‚’ä¸ãˆãŸã‚‰é‡å¿ƒé–“ã®è·é›¢ã¨ã—ã¦è¦³æ¸¬é‡ãŒå‡ºã¦ãã‚‹ï¼ã“ã®æ™‚ç‚¹ã§ã‚¢ãƒ³ãƒ†ãƒŠå–ä»˜ä½ç½®ã®æ…£æ€§åº§æ¨™ã‚’æ¸¡ã™å¿…è¦ãŒã‚ã‚‹ï¼
     double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
     double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
-    // ‚±‚Ì’†‚É®”•s’è«‚ğ“ü‚ê‚Ä‚È‚¢‚Ì‚ªƒ_ƒ‚È‚Ì‚Å‚ÍH
+    // ã“ã®ä¸­ã«æ•´æ•°ä¸å®šæ€§ã‚’å…¥ã‚Œã¦ãªã„ã®ãŒãƒ€ãƒ¡ãªã®ã§ã¯ï¼Ÿ
     auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
     auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
 
@@ -95,11 +84,11 @@ void PBD_GnssObservation::UpdateGnssObservation()
     true_values_.ionfree_pseudo_range.push_back(ionfree_range);
     true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
 
-    // ŠÏ‘ªî•ñ‚Ì•û‚É‚ÍŠÏ‘ªŒë·‚ğ¬‚º‚é
+    // è¦³æ¸¬æƒ…å ±ã®æ–¹ã«ã¯è¦³æ¸¬èª¤å·®ã‚’æ··ãœã‚‹
     std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
     std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
 
-    //estimate‚Ég‚¤•û‚Ìî•ñ
+    //estimateã«ä½¿ã†æ–¹ã®æƒ…å ±
     gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_sat_id);
     gnss_clock = gnss_satellites_.GetSatelliteClock(gnss_sat_id);
 
@@ -128,13 +117,13 @@ void PBD_GnssObservation::UpdateGnssObservation()
 
 bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
 {
-  // ‚±‚±‚É‚Íp¨‚Ì—v‘f‚à“ü‚ê‚È‚¯‚ê‚Î‚¢‚¯‚È‚¢D
+  // ã“ã“ã«ã¯å§¿å‹¢ã®è¦ç´ ã‚‚å…¥ã‚Œãªã‘ã‚Œã°ã„ã‘ãªã„ï¼
   double angle_rad = angle(satellite_position, gnss_position - satellite_position);
   if (angle_rad < M_PI / 2.0 - mask_angle) return true;
   else return false;
 }
 
-// ionfree‚ÌŒvZ‚ğ‚µ‚Ä‚¢‚éD
+// ionfreeã®è¨ˆç®—ã‚’ã—ã¦ã„ã‚‹ï¼
 void PBD_GnssObservation::CalcIonfreeObservation()
 {
   int observed_gnss_index = 0;
@@ -147,9 +136,9 @@ void PBD_GnssObservation::CalcIonfreeObservation()
     }
     else if (info_.pre_observed_status.at(i) == false && info_.now_observed_status.at(i) == true)
     {
-      // (first + second)*lambda ‚©‚ç^‚Ì‹——£ˆø‚¢‚Ä‚»‚±‚©‚çN‹‚ß‚éD‚±‚±‚©‚çIIIIIIIIIIIIIIIIIIIII ‚»‚Ì‚Ü‚Ü^‚Ì‹——£ˆø‚¢‚½‚ç0‚É‚È‚é‚©‚ç‚±‚±‚Å‚Ì^‚Ì‹——£‚Í‚ğg‚¤D‚Ì¸“xˆÈ‰º‚É–„‚à‚ê‚é•”•ª‚ª®”•s’è«‚Æ‚µ‚Äo‚Ä‚­‚éH“`”ÀŠÔ‚à•K—v‚â‚ñD
-      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // ‚±‚ê‚¶‚áƒ_ƒD‚ ‚Ü‚è•ª‚ÌN‚ğ‹‚ß‚È‚¢‚ÆD‚ ‚ñ‚ÜŠÖŒW‚È‚¢‹C‚ª‚·‚é‚Ì‚ÅŒã‚Å‘Î‰‚·‚éD
-      // ‚±‚ê‚ª‚Ç‚Ìch‚É‘Î‰‚µ‚Ä‚¢‚é‚©‚Í‚í‚©‚Á‚Ä‚¢‚éD
+      // (first + second)*lambda ã‹ã‚‰çœŸã®è·é›¢å¼•ã„ã¦ãã“ã‹ã‚‰Næ±‚ã‚ã‚‹ï¼ã“ã“ã‹ã‚‰ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ ãã®ã¾ã¾çœŸã®è·é›¢å¼•ã„ãŸã‚‰0ã«ãªã‚‹ã‹ã‚‰ã“ã“ã§ã®çœŸã®è·é›¢ã¯æ™‚åˆ»ã‚’ä½¿ã†ï¼æ™‚åˆ»ã®ç²¾åº¦ä»¥ä¸‹ã«åŸ‹ã‚‚ã‚Œã‚‹éƒ¨åˆ†ãŒæ•´æ•°ä¸å®šæ€§ã¨ã—ã¦å‡ºã¦ãã‚‹ï¼Ÿä¼æ¬æ™‚é–“ã‚‚å¿…è¦ã‚„ã‚“ï¼
+      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // ã“ã‚Œã˜ã‚ƒãƒ€ãƒ¡ï¼ã‚ã¾ã‚Šåˆ†ã®Nã‚’æ±‚ã‚ãªã„ã¨ï¼ã‚ã‚“ã¾é–¢ä¿‚ãªã„æ°—ãŒã™ã‚‹ã®ã§å¾Œã§å¯¾å¿œã™ã‚‹ï¼
+      // ã“ã‚ŒãŒã©ã®chã«å¯¾å¿œã—ã¦ã„ã‚‹ã‹ã¯ã‚ã‹ã£ã¦ã„ã‚‹ï¼
       l2_bias_.at(i) = true_values_.L2_carrier_phase.at(observed_gnss_index).second;
     }
     if (info_.now_observed_status.at(i)) ++observed_gnss_index;
@@ -185,13 +174,13 @@ void PBD_GnssObservation::CalcIonfreeObservation()
   return;
 }
 
-// ‚±‚ÌŠÖ”‚ÍŠO•”‚ÅŒÄ‚Î‚ê‚ÄC“à•”‚ª•ÏX‚³‚ê‚éDDD
+// ã“ã®é–¢æ•°ã¯å¤–éƒ¨ã§å‘¼ã°ã‚Œã¦ï¼Œå†…éƒ¨ãŒå¤‰æ›´ã•ã‚Œã‚‹ï¼ï¼ï¼
 void PBD_GnssObservation::UpdateInfoAfterObserved()
 {
   // update observation state info
   for (int i = 0; i < num_of_gnss_satellites_; ++i)
   {
-    // ‚±‚±‚Ì‘€ì‚Íconst‚È‚Ì‚Å‚Å‚«‚È‚¢D‚±‚ê‚ÍUpdateŠÖ”‚Ì‰Šú•”•ª‚ÉˆÚs‚·‚ê‚Î‚¢‚¢H
+    // ã“ã“ã®æ“ä½œã¯constãªã®ã§ã§ããªã„ï¼ã“ã‚Œã¯Updateé–¢æ•°ã®åˆæœŸéƒ¨åˆ†ã«ç§»è¡Œã™ã‚Œã°ã„ã„ï¼Ÿ
     info_.pre_observed_status.at(i) = info_.now_observed_status.at(i);
     info_.now_observed_status.at(i) = false;
   }

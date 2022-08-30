@@ -1056,16 +1056,6 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est)// LEO
   // now_index以上の部分を0に落とすということをやる．
   for (int i = now_index; i<num_of_gnss_channel; ++i)
   x_est.ambiguity.N.at(i) = 0;
-
-
-  /*
-  if (abs(M.determinant()) < 10e-13)
-  {
-    cout << "M matirx is singular" << std::endl;
-    abort();
-  }
-  */
-  //cout << M << std::endl;
 }
 
 // これは観測情報を行列に入れている部分なので推定のところでするべき．
@@ -1080,7 +1070,7 @@ void PBD_dgps::SetBiasToObservation(const int sat_id, EstimatedVariables& x_est,
 
     UpdateBiasForm(sat_id, x_est);
     gnss_observation.UpdateInfoAfterObserved();
- 
+
     return;
 }
 
