@@ -12,6 +12,7 @@
 // #include "../../Component/CDH/OBC_Sat1.h"
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
+#include "../../Component/AOCS/PBD_GNSSReceiver.hpp"
 
 class OBC;
 // class OBC_Sat0;
@@ -35,6 +36,7 @@ private:
   OBC* obc_;
   RFSystemTransmitter* rf_sys_transmitter_;
   RFSystemReceiver* rf_sys_receiver_;
+  PBD_GNSSReceiver* gnss_receiver_;
 
   // General information
   const SimulationConfig* config_;

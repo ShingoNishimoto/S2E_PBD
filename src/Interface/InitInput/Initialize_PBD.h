@@ -3,6 +3,7 @@
 #include <Component/CommGS/InitAnt.hpp>
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
+#include "../../Component/AOCS/InitGNSSReceiver.hpp"
 
 // Component
 class RFSystemTransmitter;

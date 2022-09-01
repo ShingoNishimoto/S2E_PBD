@@ -12,6 +12,9 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
   // RF System
   ini_path = iniAccess.ReadString("COMPONENTS_FILE", "rf_system_receiver_file");
   rf_sys_receiver_ = new RFSystemReceiver(InitRFSystemReceiver(clock_gen, ini_path, pbd_inter_sat_comm, dynamics, &(glo_env->GetSimTime())));
+  // GNSS receiver
+  ini_path = iniAccess.ReadString("COMPONENTS_FILE", "gnss_receiver");
+  gnss_receiver_ = new PBD_GNSSReceiver(InitGNSSReceiver(clock_gen, sat_id, ini_path, dynamics, &(glo_env->GetGnssSatellites()), &(glo_env->GetSimTime())));
 }
 
 PBD_Components::~PBD_Components()
@@ -19,6 +22,7 @@ PBD_Components::~PBD_Components()
   delete obc_;
   delete rf_sys_transmitter_;
   delete rf_sys_receiver_;
+  delete gnss_receiver_;
 }
 
 Vector<3> PBD_Components::GenerateForce_N_b()
