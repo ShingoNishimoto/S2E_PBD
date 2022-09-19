@@ -12,6 +12,7 @@
 // #include "../../Component/CDH/OBC_Sat1.h"
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
+#include "../../Component/AOCS/PBD_GNSSReceiver.hpp"
 
 class OBC;
 // class OBC_Sat0;
@@ -28,13 +29,17 @@ public:
   ~PBD_Components();
   libra::Vector<3> GenerateForce_N_b();
   libra::Vector<3> GenerateTorque_Nm_b();
-  void LogSetUp(Logger& logger);
+  void LogSetup(Logger& logger) override;
+
+  // Getter
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
+  inline PBD_GNSSReceiver* GetGNSSReceiver(void) const { return gnss_receiver_; };
 
 private:
   OBC* obc_;
   RFSystemTransmitter* rf_sys_transmitter_;
   RFSystemReceiver* rf_sys_receiver_;
+  PBD_GNSSReceiver* gnss_receiver_;
 
   // General information
   const SimulationConfig* config_;

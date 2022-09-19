@@ -12,15 +12,18 @@ public:
   // 状態量の更新
   virtual void Update(const SimTime* sim_time);
   ~PBD_Sat();
+
+  // ログ保存機能
+  virtual void LogSetup(Logger& logger);
+
   /*
   // 初期化
   virtual void Initialize(SimulationConfig* sim_config, const GlobalEnvironment* glo_env, PBD_InterSatComm* pbd_inter_sat_comm, const int sat_id);
-  // ログ保存機能
-  virtual void LogSetup(Logger& logger);
 
   //ダイナミクスへの力・トルク出力
   void GenerateTorque_Nm_b();
   void GenerateForce_N_b();
   */
   PBD_GnssObservation* gnss_observation_;
+  PBD_Components* pbd_components_;
 };
