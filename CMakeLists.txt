@@ -131,7 +131,7 @@ set(SOURCE_FILES
   src/Simulation/PBD/PBD_const.cpp
   src/Component/CDH/OBC_Sat0.cpp
   src/Component/CDH/OBC_Sat1.cpp
-  src/Component/AOCS/PBD_GnssReceiver.cpp
+  src/Component/AOCS/PBD_GNSSReceiver.cpp
   src/Component/AOCS/InitGnssReceiver.cpp
   src/Component/RFSystem/RFSystemReceiver.cpp
   src/Component/RFSystem/RFSystemTransmitter.cpp

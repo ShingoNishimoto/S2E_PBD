@@ -9,6 +9,7 @@
 #include "Vector.hpp"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
+#include "../Spacecraft/PBD_Components.h"
 
 
 // ホンマは周波数帯とかコードの種類を抽象化したクラスを作ったほうがいいのかなあ．．
@@ -50,13 +51,22 @@ struct GnssObserveInfo
 class PBD_GnssObservation
 {
 public:
-  PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites);
+  // FIXME: constになおす．
+  PBD_GnssObservation(PBD_GNSSReceiver* gnss_receiver, const GnssSatellites& gnss_satellites);
   ~PBD_GnssObservation();
 
   void Update(void);
   void UpdateGnssObservation();
   void CalcIonfreeObservation();
   void UpdateInfoAfterObserved();
+
+  double CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock);
+  double CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda);
+  double CalculateGeometricRange(const libra::Vector<3> sat_position, libra::Vector<3> gnss_position) const;
+
+  // ここら辺を介す構成はやめたい．
+  inline const libra::Vector<3> GetAntennaAlignmentError(void) { return receiver_->GetAlignmentError(); };
+  inline const libra::Vector<3> GetAntennaPosition (void) { return receiver_->GetAntennaPositionBody(); };
 
   GnssObservedValues true_values_; // trueは要らんかも
   GnssObservedValues observed_values_;
@@ -72,7 +82,8 @@ public:
   const double mask_angle = 10.0 / 180.0 * M_PI;
 
 private:
-  const Orbit& orbit_;
+  // const Orbit& orbit_;
+  PBD_GNSSReceiver* receiver_;
   const GnssSatellites& gnss_satellites_;
   //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
   bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;

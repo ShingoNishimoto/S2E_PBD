@@ -16,7 +16,7 @@ bool GnssObservedValues::check_normal()
     return true;
 }
 
-PBD_GnssObservation::PBD_GnssObservation(const Orbit& orbit, const GnssSatellites& gnss_satellites) : orbit_(orbit), gnss_satellites_(gnss_satellites)
+PBD_GnssObservation::PBD_GnssObservation(PBD_GNSSReceiver* gnss_receiver, const GnssSatellites& gnss_satellites) : receiver_(gnss_receiver), gnss_satellites_(gnss_satellites)
 {
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites();
   // 初期化
@@ -41,7 +41,9 @@ void PBD_GnssObservation::UpdateGnssObservation()
 {
   //推定値の計算
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 更新 <- ?
-  libra::Vector<3> sat_position_i = orbit_.GetSatPosition_i(); // ECI
+  // ここでMainRoutineを呼べばいいだけではあった．constのままでしたいな．
+
+  const libra::Vector<3> antenna_position_i = receiver_->GetAntennaPositionTrueECI(); // ECI
 
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_gnss_sat_id.clear(); //クリア
@@ -52,7 +54,7 @@ void PBD_GnssObservation::UpdateGnssObservation()
     //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; 　←この衛星たちの軌道情報が悪いからこうしていたのか？
     if (!gnss_satellites_.GetWhetherValid(gnss_sat_id)) continue;
     libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
-    bool see_flag = CheckCanSeeSatellite(sat_position_i, gnss_position);
+    bool see_flag = CheckCanSeeSatellite(antenna_position_i, gnss_position);
 
     if (!see_flag)
     {
@@ -63,12 +65,14 @@ void PBD_GnssObservation::UpdateGnssObservation()
 
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
 
-    // 以下で衛星位置を与えたら重心間の距離として観測量が出てくる．この時点でアンテナ取付位置の慣性座標を渡す必要がある．
-    double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
-    double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
+    libra::Vector<3> code_position_i = receiver_->GetCodeReceivePositionTrueECI();
+    double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, code_position_i, receiver_clock_bias_, L1_frequency);
+    double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, code_position_i, receiver_clock_bias_, L2_frequency);
+
+    libra::Vector<3> phase_position_i = receiver_->GetPhaseReceivePositionTrueECI();
     // この中に整数不定性を入れてないのがダメなのでは？
-    auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L1_frequency);
-    auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, sat_position_i, receiver_clock_bias_, L2_frequency);
+    auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L1_frequency);
+    auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L2_frequency);
 
     double ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
     double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * (l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda * (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
@@ -88,7 +92,7 @@ void PBD_GnssObservation::UpdateGnssObservation()
     std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
     std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
 
-    //estimateに使う方の情報
+    // estimateに使う方の情報
     gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_sat_id);
     gnss_clock = gnss_satellites_.GetSatelliteClock(gnss_sat_id);
 
@@ -138,6 +142,7 @@ void PBD_GnssObservation::CalcIonfreeObservation()
     {
       // (first + second)*lambda から真の距離引いてそこからN求める．ここから！！！！！！！！！！！！！！！！！！！！！ そのまま真の距離引いたら0になるからここでの真の距離は時刻を使う．時刻の精度以下に埋もれる部分が整数不定性として出てくる？伝搬時間も必要やん．
       l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // これじゃダメ．あまり分のNを求めないと．あんま関係ない気がするので後で対応する．
+      // FIXME: 多分coreに入っている部分で整数不定性をwhite noiseとかで初期化して，それが固定値バイアスとしてずっと入るような仕様にしないとダメな気がする．
       // これがどのchに対応しているかはわかっている．
       l2_bias_.at(i) = true_values_.L2_carrier_phase.at(observed_gnss_index).second;
     }
@@ -203,3 +208,45 @@ void PBD_GnssObservation::ClearPreValues(GnssObservedValues& values)
   values.ionfree_pseudo_range.clear();
 };
 
+double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock)
+{
+  double range = 0.0;
+  // 推定するときはここにアライメント誤差の推定量も混ぜる．
+  libra::Vector<3> receive_position = receiver_->GetCodeReceivePositionDesignECI(sat_position);
+  range = CalculateGeometricRange(receive_position, gnss_position);
+
+  // clock offsetの分を追加
+  range += sat_clock - gnss_clock; // 電離層はフリーにしている．
+  // 観測ノイズ
+  std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
+  range += pseudo_range_noise(mt);
+  return range;
+}
+
+double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda)
+{
+  double range = 0.0;
+  libra::Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
+  range = CalculateGeometricRange(receive_position, gnss_position);
+
+  range += sat_clock - gnss_clock;
+  range += lambda * integer_bias;
+  // range += integer_bias;
+  // 観測ノイズ
+  std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
+  range += carrier_phase_noise(mt);
+
+  return range;
+}
+
+// ここは重心位置で良い．
+double PBD_GnssObservation::CalculateGeometricRange(const libra::Vector<3> sat_position, libra::Vector<3> gnss_position) const
+{
+  double range = 0.0;
+  for (int i = 0; i < 3; ++i) {
+    range += pow(sat_position[i] - gnss_position[i], 2.0);
+  }
+  range = sqrt(range);
+
+  return range;
+}

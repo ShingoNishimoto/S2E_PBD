@@ -14,3 +14,7 @@ RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const std::stri
 //InterSatComm
 class RFSystemBeam;
 RFSystemBeam InitRFSystemBeam(const std::string ini_path);
+
+// GNSSReceiver
+PBD_GNSSReceiver InitGNSSReceiver(ClockGenerator* clock_gen, int id, const std::string fname,
+  const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime);

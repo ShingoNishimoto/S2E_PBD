@@ -39,7 +39,7 @@ Vector<3> PBD_Components::GenerateTorque_Nm_b()
   return torque_Nm_b_;
 };
 
-void PBD_Components::LogSetUp(Logger & logger)
+void PBD_Components::LogSetup(Logger & logger)
 {
-  UNUSED(logger);
+  logger.AddLoggable(gnss_receiver_);
 }

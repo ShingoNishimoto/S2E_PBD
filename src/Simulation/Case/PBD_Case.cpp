@@ -32,8 +32,8 @@ void PBD_Case::InitializeSpacecrafts()
 void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), (spacecrafts_.at(0)->GetDynamics()).GetOrbit(), (spacecrafts_.at(1)->GetDynamics()).GetOrbit(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_)); // ここはGetterとか使った方がいい．
-  
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_)); // ここはGetterとか使った方がいい．
+
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
   for (auto& spacecraft : spacecrafts_)
@@ -67,6 +67,8 @@ void PBD_Case::Main()
     {
       // 実際はここの中でGNSS観測情報の更新をしたい．
       spacecraft->Update(&(glo_env_->GetSimTime()));
+      // コンポーネントの更新もここでやるのか？MainRoutineがどこで呼ばれているのかが不明．．．
+
     }
     pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));
     // Debug output

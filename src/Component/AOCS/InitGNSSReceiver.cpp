@@ -49,7 +49,7 @@ PBD_GNSSReceiver InitGNSSReceiver(ClockGenerator* clock_gen, int id, const std::
                               const GnssSatellites* gnss_satellites, const SimTime* simtime) {
   GNSSReceiverParam gr_param = ReadGNSSReceiverIni(fname, gnss_satellites);
 
-  PBD_GnssReceiver gnss_r(gr_param.prescaler, clock_gen, id, gr_param.gnss_id, gr_param.ch_max, gr_param.antenna_model, gr_param.antenna_pos_b,
+  PBD_GNSSReceiver gnss_r(gr_param.prescaler, clock_gen, id, gr_param.gnss_id, gr_param.ch_max, gr_param.antenna_model, gr_param.antenna_pos_b,
                       gr_param.q_b2c, gr_param.half_width, gr_param.noise_std, gr_param.alignment_err_std, dynamics, gnss_satellites, simtime);
   return gnss_r;
 }

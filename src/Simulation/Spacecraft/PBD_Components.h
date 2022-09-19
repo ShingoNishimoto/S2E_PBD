@@ -29,8 +29,11 @@ public:
   ~PBD_Components();
   libra::Vector<3> GenerateForce_N_b();
   libra::Vector<3> GenerateTorque_Nm_b();
-  void LogSetUp(Logger& logger);
+  void LogSetup(Logger& logger) override;
+
+  // Getter
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
+  inline PBD_GNSSReceiver* GetGNSSReceiver(void) const { return gnss_receiver_; };
 
 private:
   OBC* obc_;
