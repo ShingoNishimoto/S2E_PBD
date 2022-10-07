@@ -6,7 +6,7 @@
 
 using libra::Vector;
 
-class PBD_GNSSReceiver : public GNSSReceiver, public ILoggable
+class PBD_GNSSReceiver : public GNSSReceiver
 {
 public:
   PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
