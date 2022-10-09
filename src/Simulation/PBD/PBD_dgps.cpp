@@ -412,11 +412,11 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   double y = position(1);
   double z = position(2);
 
-  // double tmp_J2_coefficient = 3.0/2.0*mu_e*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); // J2項の係数
-  // acc_dist(0) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (x / r);
-  // acc_dist(1) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (y / r);
-  // acc_dist(2) = -(tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0))) * (z / r);
-  AddGeoPotentialDisturbance(position, acc_dist);
+  double tmp_J2_coefficient = 3.0/2.0*mu_e*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); // J2項の係数
+  acc_dist(0) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (x / r);
+  acc_dist(1) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (y / r);
+  acc_dist(2) = -(tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0))) * (z / r);
+  // AddGeoPotentialDisturbance(position, acc_dist);
 
   acc_dist -= Cd*v*velocity; // -Cd*V^2*(Vi/V) 大気抵抗
 
@@ -511,6 +511,7 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
   Eigen::MatrixXd A = Eigen::MatrixXd::Zero(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
   // (r, v)
   A(0, 4) = 1.0; A(1, 5) = 1.0; A(2, 6) = 1.0;
+  // J2の部分はこの形式を使うならECEFにしないといけない．
   // (v, r)
   A(4, 0) = 3.0 * mu_e * x * x / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient * (1.0 / pow(r, 5.0) - 5.0 * (x * x + z * z) / pow(r, 7.0) + 35.0 * x * x * z * z / pow(r, 9.0));
   A(4, 1) = 3.0 * mu_e * x * y / pow(r, 5.0) - J2_coefficient * (-5.0 * x * y / pow(r, 7.0) + 35.0 * x * y * z * z / pow(r, 9.0));
@@ -541,13 +542,12 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
 // これはlibra::Vectorにした方がいいかもしれん．
 Eigen::Matrix3d PBD_dgps::TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const
 {
-  Eigen::Vector3d rtn_r(3);
-  for (int i = 0; i < 3;++i) rtn_r(i) = position(i) / position.norm();
-  Eigen::Vector3d rtn_t(3);
-  for (int i = 0; i < 3; ++i) rtn_t(i) = velocity(i) / velocity.norm();
-  Eigen::Vector3d rtn_n = rtn_r.cross(rtn_t);
+  Eigen::Vector3d rtn_r = position.normalized();
+  Eigen::Vector3d rtn_n = position.cross(velocity);
+  rtn_n.normalize();
+  Eigen::Vector3d rtn_t = rtn_n.cross(rtn_r);
+  rtn_t.normalize();
 
-  rtn_n /= rtn_n.norm();
   Eigen::MatrixXd RTN2ECI(3,3);
   RTN2ECI.block(0, 0, 3, 1) = rtn_r;
   RTN2ECI.block(0, 1, 3, 1) = rtn_t;
