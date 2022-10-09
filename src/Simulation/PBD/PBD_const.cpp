@@ -33,9 +33,9 @@ const double sigma_N_process     = 0.10;    //[cycle]
 // clock noise model parameters of receiver
 const double clock_sigma     = 5;  //[m] 0.1 で<- 0.1nsくらいになる．これは今white noiseになっている．
 
-const double mu_const = 3.986004418e14; //GM_E m^3/s^2
-const double J2_const = 1.082636e-3; //無次元 重力J2項
-const double Earth_Radius = 6378136.6; //m
+const double mu_e = 3.986004418e14; //GM_E m^3/s^2
+const double J2_const = 1.082630e-3; // 無次元 重力J2項
+const double Earth_Radius = environment::earth_equatorial_radius_m; //m
 
 const double tau_a = 900;
 const double tau_cdt = 100;

@@ -24,8 +24,7 @@ void PBD_GNSSReceiver::MainRoutine(int count)
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
 
   // 特定のGNSS衛星に対してみているのではなくて，反地球方向を見ているかの簡単な確認．
-  // CheckAntenna(pos_true_eci_, q_i2b); TODO: ちゃんと動くように修正！
-  is_gnss_sats_visible_ = 1; // ひとまず絶対可視であるようにしている．
+  CheckAntenna(pos_true_eci_, q_i2b);
 
   if (is_gnss_sats_visible_ == 1) {  // Antenna of GNSS-R can detect GNSS signal
     UpdatePosition();

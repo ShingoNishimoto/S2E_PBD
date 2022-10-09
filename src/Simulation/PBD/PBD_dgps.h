@@ -15,6 +15,7 @@
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 #include "PBD_GnssObservation.h"
+#include "PBD_GeoPotential.hpp"
 #include "PBD_const.h"
 
 
@@ -37,15 +38,15 @@ public:
     Eigen::VectorXd clock; // 複数GNSSなどになった時はvectorになりうる．
     //[vx[m/s], vy[m/s], vz[m/s]]
     Eigen::Vector3d velocity;
-    //[ax[nm/s^2], ay[nm/s^2], az[nm/s^2]]
-    Eigen::Vector3d acceleration; // 経験加速度
-    Eigen::Vector3d acc_dyn; // ダイナミクスによる加速度（ログ用）
+    //[ar[nm/s^2], at[nm/s^2], an[nm/s^2]]
+    Eigen::Vector3d acceleration; // 経験加速度 RTN
+    Eigen::Vector3d acc_dist; // 外乱による加速度（ログ用）ECI
     Ambiguity ambiguity;
     // Eigen::VectorXd N; // [cycle] ambiguity <- これだけやとGNSS衛星IDとの対応が取れなくてキモイ．
     const double lambda = L1_lambda; // wave length [m]
   };
 
-  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation); // OrbitとGnssObservation同時に取得したい．
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential geop); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
   void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation);//, const Orbit& main_orbit, const Orbit& target_orbit);
   void OrbitPropagation();
@@ -70,10 +71,6 @@ private:
   EstimatedVariables x_est_target;
 
   Eigen::VectorXd true_N_main;
-
-  // std::map<const int, int> main_index_dict;
-
-  // 辞書が欲しい commonとmainをつなげるために
   Eigen::VectorXd true_N_target; // [m]
 
   // std::map<const int, int> common_index_dict;
@@ -99,16 +96,6 @@ private:
   std::vector<bool> common_observed_status{};
   std::vector<int> common_observed_gnss_sat_id{};
 
-  // now, preが必要か？
-  /*
-  std::map<const int, int> pre_main_observing_ch; // <ch, gnss_sat_id>
-  std::map<const int, int> now_main_observing_ch;
-  std::map<const int, int> pre_common_observing_ch;
-  std::map<const int, int> now_common_observing_ch;
-  vector<int> main_free_ch{};
-  vector<int> common_free_ch{};
-  */
-
   // air drag balistic coeficient
   const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
 
@@ -116,26 +103,18 @@ private:
   Eigen::MatrixXd Q;
   Eigen::MatrixXd R;
 
-// この辺は全てマクロにする．FIXME
-  const int num_of_single_status = 10;
-  const int num_of_status = 20;
-  const int num_of_gnss_channel = 12; // max receivable gnss number
-  const int observation_dimension = 3*num_of_gnss_channel; // GRAPHIC*2 + SDCP
-  const int state_dimension = num_of_status + 2 * num_of_gnss_channel;
-  const int single_dimension = num_of_single_status + num_of_gnss_channel;
-
   double step_time;
   double observe_step_time = 10.0;
   double log_step_time = 1.0;
 
+  PBD_GeoPotential& geo_potential_;
+
   void InitAmbiguity(EstimatedVariables& x_est);
-  std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn);
+  std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist);
   Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
-  Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dyn) const;
-  // for differential
+  Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist) const;
+  void AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const;
   Eigen::MatrixXd UpdateM();
-  // Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
-  // for differential
   Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
   Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
   Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．

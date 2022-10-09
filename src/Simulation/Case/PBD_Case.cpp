@@ -1,5 +1,6 @@
 #include "PBD_Case.h"
 #include <Interface/InitInput/IniAccess.h>
+#include "../PBD/PBD_GeoPotential.hpp"
 
 PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
@@ -32,7 +33,6 @@ void PBD_Case::InitializeSpacecrafts()
 void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_)); // ここはGetterとか使った方がいい．
 
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
@@ -40,6 +40,12 @@ void PBD_Case::Initialize()
   {
     spacecraft->LogSetup(*(sim_config_.main_logger_));
   }
+
+  // この時点で受け取っても中身がないのかもしれない．なぜか中身がなくて怒られてしまう．
+  const LocalEnvironment& local_env_ = spacecrafts_.at(0)->GetLocalEnv();
+  PBD_GeoPotential geop(2, local_env_, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
+
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop); // ここはGetterとか使った方がいい．
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
@@ -70,6 +76,7 @@ void PBD_Case::Main()
       // コンポーネントの更新もここでやるのか？MainRoutineがどこで呼ばれているのかが不明．．．
 
     }
+    // ここで毎回local Environmentを受け取ったほうがいいのか？
     pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
