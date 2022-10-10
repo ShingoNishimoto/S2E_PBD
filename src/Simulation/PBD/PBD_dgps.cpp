@@ -14,6 +14,7 @@
 
 // Kalman Filter method
 #define AKF
+// #define AIR_DRAG_ON
 
 #define REDUCED_DYNAMIC
 
@@ -36,7 +37,7 @@ static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_
 static const double PBD_DGPS_kConvNm2m = 1e-9;
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_dynamics_(main_dynamics), target_dynamics_(target_dynamics), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({ main_observation, target_observation }), geo_potential_(geop)
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_dynamics_(main_dynamics), target_dynamics_(target_dynamics), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({ main_observation, target_observation }), geo_potential_(geop)
 {
   //初期化
   x_est_main.position = Eigen::VectorXd::Zero(3);
@@ -131,9 +132,9 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   for (int i = 0; i < 3; ++i) x_est_main.velocity(i) += velocity_dist(mt);
 
 #ifdef REDUCED_DYNAMIC
-  x_est_main.acceleration(0) += acc_r_dist(mt);
-  x_est_main.acceleration(1) += acc_t_dist(mt);
-  x_est_main.acceleration(2) += acc_n_dist(mt);
+  // x_est_main.acceleration(0) += acc_r_dist(mt);
+  // x_est_main.acceleration(1) += acc_t_dist(mt);
+  // x_est_main.acceleration(2) += acc_n_dist(mt);
 #endif
   for(int i = 0; i < NUM_GNSS_CH; ++i) x_est_main.ambiguity.N.at(i) += N_dist(mt);
   for(int i = 0; i < 3; ++i) x_est_target.position(i) += position_dist(mt);
@@ -141,9 +142,9 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) += velocity_dist(mt);
 
 #ifdef REDUCED_DYNAMIC
-  x_est_target.acceleration(0) += acc_r_dist(mt);
-  x_est_target.acceleration(1) += acc_t_dist(mt);
-  x_est_target.acceleration(2) += acc_n_dist(mt);
+  // x_est_target.acceleration(0) += acc_r_dist(mt);
+  // x_est_target.acceleration(1) += acc_t_dist(mt);
+  // x_est_target.acceleration(2) += acc_n_dist(mt);
 #endif
   for(int i = 0; i < NUM_GNSS_CH; ++i) x_est_target.ambiguity.N.at(i) += N_dist(mt);
 
@@ -191,12 +192,14 @@ void PBD_dgps::InitAmbiguity(EstimatedVariables& x_est)
 }
 
 // ここが他と同じ時刻系を使ってないのが原因な気がしてきた．FIXME！
-void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation_, PBD_GnssObservation& target_observation_)// , const Orbit& main_orbit, const Orbit& target_orbit)
+void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation_, PBD_GnssObservation& target_observation_, const CelestialRotation earth_rotation)// , const Orbit& main_orbit, const Orbit& target_orbit)
 {
   // 参照渡ししたものを代入するのは無理．
   gnss_observations_.clear();
   gnss_observations_.push_back(main_observation_);
   gnss_observations_.push_back(target_observation_);
+
+  trans_eci_to_ecef_ = earth_rotation.GetDCMJ2000toXCXF();
 
   double elapsed_time = sim_time_.GetElapsedSec();
   double tmp = floor(elapsed_time/observe_step_time + 1e-4); //1e-4は数値誤差
@@ -223,50 +226,55 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     libra::Vector<3> sat_velocity_main = main_dynamics_.GetOrbit().GetSatVelocity_i();
     libra::Vector<3> sat_position_target = target_dynamics_.GetPosition_i();
     libra::Vector<3> sat_velocity_target = target_dynamics_.GetOrbit().GetSatVelocity_i();
-    // RTNで残す．
-    Eigen::Vector3d sat_pos_rtn_main{ };
-    Eigen::Vector3d sat_vel_rtn_main{ };
-    Eigen::Vector3d sat_pos_rtn_target{ };
-    Eigen::Vector3d sat_vel_rtn_target{ };
-    for (uint8_t i = 0; i < 3; i++)
-    {
-      sat_pos_rtn_main(i) = sat_position_main[i];
-      sat_pos_rtn_target(i) = sat_position_target[i];
-      sat_vel_rtn_main(i) = sat_velocity_main[i];
-      sat_vel_rtn_target(i) = sat_velocity_target[i];
-    }
-    Eigen::Matrix3d trans_eci_to_rtn_main = TransRTN2ECI(sat_pos_rtn_main, sat_vel_rtn_main).inverse();
-    Eigen::Matrix3d trans_eci_to_rtn_target = TransRTN2ECI(sat_pos_rtn_target, sat_vel_rtn_target).inverse();
 
-    sat_pos_rtn_main = trans_eci_to_rtn_main * sat_pos_rtn_main;
-    sat_vel_rtn_main = trans_eci_to_rtn_main * sat_vel_rtn_main;
-    sat_pos_rtn_target = trans_eci_to_rtn_target * sat_pos_rtn_target;
-    sat_vel_rtn_target = trans_eci_to_rtn_target * sat_vel_rtn_target;
-
-    for(int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_pos_rtn_main(i) << ","; // r_m_true
+    // ECIでの真値（位置，クロックバイアス，速度）を残す．
+    for(int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_position_main[i] << ","; // r_m_true
     ofs << std::fixed << std::setprecision(30) << receiver_clock_bias_main_ << ","; // t_m_true
-    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << sat_vel_rtn_main(i) << ","; // v_m_ture
+    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << sat_velocity_main[i] << ","; // v_m_ture
 
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_pos_rtn_target(i) << ","; // r_t_ture
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_position_target[i] << ","; // r_t_ture
     ofs << std::fixed << std::setprecision(30) << receiver_clock_bias_target_ << ","; // t_t_true
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_vel_rtn_target(i) << ","; // v_t_ture
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_velocity_target[i] << ","; // v_t_ture
 
-    // 推定結果
-    // RTNに変換(変換行列は真値を使う，そうじゃないと意味がない)
-    sat_pos_rtn_main = trans_eci_to_rtn_main * x_est_main.position;
-    sat_vel_rtn_main = trans_eci_to_rtn_main * x_est_main.velocity;
-    sat_pos_rtn_target = trans_eci_to_rtn_target * x_est_target.position;
-    sat_vel_rtn_target = trans_eci_to_rtn_target * x_est_target.velocity;
-
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_pos_rtn_main(i) << ","; // r_m_est
+    // 推定結果，ECIでの値を残す．
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.position(i) << ","; // r_m_est
     ofs << std::fixed << std::setprecision(30) << x_est_main.clock(0) << ","; // t_m_est
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_vel_rtn_main(i) << ","; // v_m_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.velocity(i) << ","; // v_m_est
     for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(30) << x_est_main.acceleration(i) << ","; // a_m_est
 
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_pos_rtn_target(i) << ","; // r_t_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.position(i) << ","; // r_t_est
     ofs << std::fixed << std::setprecision(30) << x_est_target.clock(0) << ","; //t_t_est
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << sat_vel_rtn_target(i) << ","; // v_t_est
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.velocity(i) << ","; // v_t_est
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << x_est_target.acceleration(i) << ","; // a_t_est
+
+    Eigen::Vector3d sat_pos_eci_main{ };
+    Eigen::Vector3d sat_vel_eci_main{ };
+    Eigen::Vector3d sat_pos_eci_target{ };
+    Eigen::Vector3d sat_vel_eci_target{ };
+    for (uint8_t i = 0; i < 3; i++)
+    {
+      sat_pos_eci_main(i) = sat_position_main[i];
+      sat_pos_eci_target(i) = sat_position_target[i];
+      sat_vel_eci_main(i) = sat_velocity_main[i];
+      sat_vel_eci_target(i) = sat_velocity_target[i];
+    }
+    Eigen::Matrix3d trans_eci_to_rtn_main = TransRTN2ECI(sat_pos_eci_main, sat_vel_eci_main).inverse();
+    Eigen::Matrix3d trans_eci_to_rtn_target = TransRTN2ECI(sat_pos_eci_target, sat_vel_eci_target).inverse();
+
+    // RTNでの残差（位置，速度）を残す．
+    Eigen::Vector3d res_pos_rtn_main{ };
+    Eigen::Vector3d res_vel_rtn_main{ };
+    Eigen::Vector3d res_pos_rtn_target{ };
+    Eigen::Vector3d res_vel_rtn_target{ };
+    res_pos_rtn_main = trans_eci_to_rtn_main * (x_est_main.position - sat_pos_eci_main);
+    res_vel_rtn_main = trans_eci_to_rtn_main * (x_est_main.velocity - sat_vel_eci_main);
+    res_pos_rtn_target = trans_eci_to_rtn_target * (x_est_target.position - sat_pos_eci_target);
+    res_vel_rtn_target = trans_eci_to_rtn_target * (x_est_target.velocity - sat_vel_eci_target);
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << res_pos_rtn_main(i) << ","; // res_pos_m_rtn
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << res_vel_rtn_main(i) << ","; // res_vel_m_rtn
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << res_pos_rtn_target(i) << ","; // res_pos_t_rtn
+    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(30) << res_vel_rtn_target(i) << ","; // res_vel_t_rtn
+
     for (int i = 0; i < NUM_GNSS_CH; ++i) ofs << std::fixed << std::setprecision(30) << true_N_main(i) << ","; // N_true
     for (int i = 0; i < NUM_GNSS_CH; ++i) ofs << std::fixed << std::setprecision(30) << x_est_main.ambiguity.N.at(i) << ","; // N_est
     for (int i = 0; i < NUM_GNSS_CH; ++i) ofs << std::fixed << std::setprecision(30) << true_N_target(i) << ","; // N_true
@@ -408,35 +416,44 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
 
   Eigen::Vector3d acc_2body = - mu_e * position / pow(r, 3.0); // 2体の重力項
 
-  double x = position(0);
-  double y = position(1);
-  double z = position(2);
+  libra::Vector<3> position_eci;
+  for (uint8_t i = 0; i < 3; i++) position_eci[i] = position(i);
+  libra::Vector<3> position_ecef = trans_eci_to_ecef_ * position_eci;
 
+  double x = position_ecef[0];
+  double y = position_ecef[1];
+  double z = position_ecef[2];
   double tmp_J2_coefficient = 3.0/2.0*mu_e*J2_const*pow(Earth_Radius, 2.0)/pow(r, 4.0); // J2項の係数
-  acc_dist(0) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (x / r);
-  acc_dist(1) = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (y / r);
-  acc_dist(2) = -(tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0))) * (z / r);
+  libra::Vector<3> acc_j2_ecef;
+  acc_j2_ecef[0] = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (x / r);
+  acc_j2_ecef[1] = -(tmp_J2_coefficient*(1.0 - 5.0*pow(z/r, 2.0))) * (y / r);
+  acc_j2_ecef[2] = -(tmp_J2_coefficient*(3.0 - 5.0*pow(z/r, 2.0))) * (z / r);
+
+  libra::Matrix<3, 3> trans_ecef_to_eci =  libra::transpose(trans_eci_to_ecef_);
+  libra::Vector<3> acc_j2_eci = trans_ecef_to_eci * acc_j2_ecef;
+  for (uint8_t i = 0; i < 3; i++) acc_dist(i) = acc_j2_eci[i];
+
   // AddGeoPotentialDisturbance(position, acc_dist);
 
+#ifdef AIR_DRAG_ON
   acc_dist -= Cd*v*velocity; // -Cd*V^2*(Vi/V) 大気抵抗
+#endif // AIR_DRAG_ON
 
-  // ここも座標変換が必要．
-  Eigen::MatrixXd acc(3, 1);
-  acc.block(0, 0, 3, 1) = acceleration; // RTN
-  Eigen::Vector3d acc_eci = TransRTN2ECI(position, velocity)*acc;
+  Eigen::MatrixXd empirical_acc(3, 1);
+  empirical_acc.block(0, 0, 3, 1) = acceleration; // RTN
+  Eigen::Vector3d empirical_acc_eci = TransRTN2ECI(position, velocity)*empirical_acc;
 
-  Eigen::Vector3d all_acceleration = acc_2body + acc_dist +  acc_eci*PBD_DGPS_kConvNm2m;
+  Eigen::Vector3d all_acceleration = acc_2body + acc_dist +  empirical_acc_eci*PBD_DGPS_kConvNm2m;
   return all_acceleration; // m/s2
 }
 
 void PBD_dgps::AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const
 {
-  // ecefの位置が必要．
   libra::Vector<3> position_eci;
   for (uint8_t i = 0; i < 3; i ++) position_eci[i] = position(i);
   // libraのvectorを使った方がいいのかもしれない．．．
   libra::Vector<3> acc_geop;
-  acc_geop = geo_potential_.CalcAccelerationECI(position_eci);
+  acc_geop = geo_potential_->CalcAccelerationECI(position_eci, trans_eci_to_ecef_);
   for (uint8_t i = 0; i < 3; i ++) acc_dist(i) = acc_geop[i];
 }
 
@@ -497,13 +514,17 @@ Eigen::MatrixXd PBD_dgps::CalculateSTM(void)
   return Phi;
 }
 
+// STMを計算している．
 Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const
 {
   double r = position.norm(); // [m]
   double v = velocity.norm(); // [m/s]
   double a = acceleration.norm(); // [nm/s]
 
-  double x = position(0); double y = position(1); double z = position(2);
+  libra::Vector<3> position_eci;
+  for (uint8_t i = 0; i < 3; i++) position_eci[i] = position(i);
+  libra::Vector<3> position_ecef = trans_eci_to_ecef_ * position_eci;
+  double x = position_ecef[0]; double y = position_ecef[1]; double z = position_ecef[2];
   double vx = velocity(0); double vy = velocity(1); double vz = velocity(2);
 
   double J2_coefficient = 3.0 / 2.0 * mu_e * J2_const * pow(Earth_Radius, 2.0);
@@ -513,20 +534,30 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
   A(0, 4) = 1.0; A(1, 5) = 1.0; A(2, 6) = 1.0;
   // J2の部分はこの形式を使うならECEFにしないといけない．
   // (v, r)
-  A(4, 0) = 3.0 * mu_e * x * x / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient * (1.0 / pow(r, 5.0) - 5.0 * (x * x + z * z) / pow(r, 7.0) + 35.0 * x * x * z * z / pow(r, 9.0));
-  A(4, 1) = 3.0 * mu_e * x * y / pow(r, 5.0) - J2_coefficient * (-5.0 * x * y / pow(r, 7.0) + 35.0 * x * y * z * z / pow(r, 9.0));
-  A(4, 2) = 3.0 * mu_e * x * z / pow(r, 5.0) - J2_coefficient * (-15.0 * x * z / pow(r, 7.0) + 35.0 * x * z * z * z / pow(r, 9.0));
-  A(5, 0) = 3.0 * mu_e * x * y / pow(r, 5.0) - J2_coefficient * (-5.0 * x * y / pow(r, 7.0) + 35.0 * x * y * z * z / pow(r, 9.0));
-  A(5, 1) = 3.0 * mu_e * y * y / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient * (1.0 / pow(r, 5.0) - 5.0 * (y * y + z * z) / pow(r, 7.0) + 35.0 * y * y * z * z / pow(r, 9.0));
-  A(5, 2) = 3.0 * mu_e * y * z / pow(r, 5.0) - J2_coefficient * (-15.0 * y * z / pow(r, 7.0) + 35.0 * y * z * z * z / pow(r, 9.0));
-  A(6, 0) = 3.0 * mu_e * x * z / pow(r, 5.0) - J2_coefficient * (-15.0 * x * z / pow(r, 7.0) + 35.0 * x * z * z * z / pow(r, 9.0));
-  A(6, 1) = 3.0 * mu_e * y * z / pow(r, 5.0) - J2_coefficient * (-15.0 * y * z / pow(r, 7.0) + 35.0 * y * z * z * z / pow(r, 9.0));
-  A(6, 2) = 3.0 * mu_e * z * z / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient * (3.0 / pow(r, 5.0) - 30.0 * z * z / pow(r, 7.0) + 35.0 * pow(z, 4.0) / pow(r, 9.0));
+  libra::Matrix<3, 3> A_j2_ecef(0);
+  A_j2_ecef[0][0] = 3.0 * mu_e * pow(x, 2.0) / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient / pow(r, 5.0) * (1.0 - 5.0 * (pow(x, 2.0) + pow(z, 2.0)) / pow(r, 2.0) + 35.0 * pow(x * z, 2.0) / pow(r, 4.0));
+  A_j2_ecef[0][1] = 3.0 * mu_e * x * y / pow(r, 5.0) - J2_coefficient * x * y / pow(r, 7.0) * (-5.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[0][2] = 3.0 * mu_e * x * z / pow(r, 5.0) - J2_coefficient * x * z / pow(r, 7.0) * (-15.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[1][0] = 3.0 * mu_e * x * y / pow(r, 5.0) - J2_coefficient * x * y / pow(r, 7.0) * (-5.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[1][1] = 3.0 * mu_e * pow(y, 2.0) / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient / pow(r, 5.0) * (1.0 - 5.0 * (pow(y, 2.0) + pow(z, 2.0)) / pow(r, 2.0) + 35.0 * pow(y * z, 2.0) / pow(r, 4.0));
+  A_j2_ecef[1][2] = 3.0 * mu_e * y * z / pow(r, 5.0) - J2_coefficient * y * z / pow(r, 7.0) * (-15.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[2][0] = 3.0 * mu_e * x * z / pow(r, 5.0) - J2_coefficient * x * z / pow(r, 7.0) * (-15.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[2][1] = 3.0 * mu_e * y * z / pow(r, 5.0) - J2_coefficient * y * z / pow(r, 7.0) * (-15.0 + 35.0 * pow(z / r, 2.0));
+  A_j2_ecef[2][2] = 3.0 * mu_e * pow(z, 2.0) / pow(r, 5.0) - mu_e / pow(r, 3.0) - J2_coefficient / pow(r, 5.0) * (3.0 - 30.0 * pow(z/r, 2.0) + 35.0 * pow(z/r, 4.0));
 
+  libra::Matrix<3, 3> A_j2_eci = libra::transpose(trans_eci_to_ecef_) * A_j2_ecef * trans_eci_to_ecef_;
+
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    for (uint8_t j = 0; j < 3; j++) A(i + 4, j) = A_j2_eci[i][j];
+  }
+
+#ifdef AIR_DRAG_ON
   // 空気抵抗分
   A(4, 4) = -Cd * (vx * vx / v + v);    A(4, 5) = -Cd * vx * vy / v;    A(4, 6) = -Cd * vx * vz / v;
   A(5, 4) = -Cd * vx * vy / v;    A(5, 5) = -Cd * (vy * vy / v + v);    A(5, 6) = -Cd * vy * vz / v;
   A(6, 4) = -Cd * vx * vz / v;    A(6, 5) = -Cd * vy * vz / v;    A(6, 6) = -Cd * (vz * vz / v + v);
+#endif // AIR_DRAG_ON
 
   // (v, a)
 #ifdef REDUCED_DYNAMIC
@@ -729,7 +760,6 @@ void PBD_dgps::KalmanFilter()
   R = alpha * R + (1 - alpha) * (E_post*E_post.transpose() + H*M*H.transpose()); // residual based R-adaptation
   Eigen::MatrixXd Q_dash = alpha * Q + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q-adaptation
 
-  // Q = Q_dash; // 直接更新
   DynamicNoiseScaling(Q_dash, CalculateSTM(), H);
   // これしてるから，絶対軌道精度の影響（つまり残差の大きさ）ではなくて，収束してしまう？
 /*

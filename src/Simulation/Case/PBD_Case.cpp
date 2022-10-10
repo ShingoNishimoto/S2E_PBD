@@ -41,11 +41,9 @@ void PBD_Case::Initialize()
     spacecraft->LogSetup(*(sim_config_.main_logger_));
   }
 
-  // この時点で受け取っても中身がないのかもしれない．なぜか中身がなくて怒られてしまう．
-  const LocalEnvironment& local_env_ = spacecrafts_.at(0)->GetLocalEnv();
-  PBD_GeoPotential geop(2, local_env_, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
+  PBD_GeoPotential* geop = new PBD_GeoPotential(2, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
 
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop); // ここはGetterとか使った方がいい．
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop);
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
@@ -77,7 +75,7 @@ void PBD_Case::Main()
 
     }
     // ここで毎回local Environmentを受け取ったほうがいいのか？
-    pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));
+    pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), glo_env_->GetCelesInfo().GetEarthRotation());
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
     {

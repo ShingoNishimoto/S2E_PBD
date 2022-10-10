@@ -12,14 +12,13 @@
 class PBD_GeoPotential
 {
 public:
-  PBD_GeoPotential(const int degree, const LocalEnvironment& local_env, std::string file_path);
+  PBD_GeoPotential(const int degree, std::string file_path);
   ~PBD_GeoPotential();
-  Vector<3> CalcAccelerationECI(const Vector<3> &position_eci);
+  Vector<3> CalcAccelerationECI(const Vector<3> &position_eci, Matrix<3, 3> trans_eci_to_ecef);
 
-private:
-  int degree_;
-  const LocalEnvironment& local_env_;
-  GeoPotential* geo_potential_;
+protected:
+  // Matrix<3, 3> trans_eci2ecef_;
+  GeoPotential* geop_;
 
 };
 

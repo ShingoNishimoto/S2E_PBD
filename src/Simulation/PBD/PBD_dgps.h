@@ -17,7 +17,7 @@
 #include "PBD_GnssObservation.h"
 #include "PBD_GeoPotential.hpp"
 #include "PBD_const.h"
-
+#include <Environment/Global/CelestialRotation.h>
 
 class PBD_dgps
 {
@@ -42,13 +42,12 @@ public:
     Eigen::Vector3d acceleration; // 経験加速度 RTN
     Eigen::Vector3d acc_dist; // 外乱による加速度（ログ用）ECI
     Ambiguity ambiguity;
-    // Eigen::VectorXd N; // [cycle] ambiguity <- これだけやとGNSS衛星IDとの対応が取れなくてキモイ．
     const double lambda = L1_lambda; // wave length [m]
   };
 
-  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential geop); // OrbitとGnssObservation同時に取得したい．
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
-  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation);//, const Orbit& main_orbit, const Orbit& target_orbit);
+  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
   void OrbitPropagation();
   void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
   // そもそもこれをpublicにしている理由がないか．
@@ -57,11 +56,10 @@ public:
   void KalmanFilter();
   void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
   void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
-  std::ofstream ofs;
-
-  EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 private:
+  PBD_GeoPotential* geo_potential_;
+
   // main satellite
   const Dynamics& main_dynamics_;
   // target satellite
@@ -107,7 +105,10 @@ private:
   double observe_step_time = 10.0;
   double log_step_time = 1.0;
 
-  PBD_GeoPotential& geo_potential_;
+  libra::Matrix<3, 3> trans_eci_to_ecef_;
+
+  // log用
+  std::ofstream ofs;
 
   void InitAmbiguity(EstimatedVariables& x_est);
   std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist);
