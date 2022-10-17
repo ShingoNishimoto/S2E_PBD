@@ -33,7 +33,6 @@ void PBD_GnssObservation::Update(void)
   // receiver clock
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
   receiver_clock_bias_ = receiver_clock_dist(mt);
-  // ここで毎回呼ぶと軌道情報が更新されてなくて死ぬ．
   UpdateGnssObservation();
 }
 
@@ -179,7 +178,7 @@ void PBD_GnssObservation::CalcIonfreeObservation()
   return;
 }
 
-// この関数は外部で呼ばれて，内部が変更される．．．
+// この関数は外部で呼ばれて，内部が変更される
 void PBD_GnssObservation::UpdateInfoAfterObserved()
 {
   // update observation state info

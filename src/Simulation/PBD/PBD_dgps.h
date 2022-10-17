@@ -98,6 +98,7 @@ private:
   const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
 
   Eigen::MatrixXd M;
+  Eigen::MatrixXd Phi_;
   Eigen::MatrixXd Q;
   Eigen::MatrixXd R;
 
@@ -111,12 +112,14 @@ private:
   std::ofstream ofs;
 
   void InitAmbiguity(EstimatedVariables& x_est);
-  std::vector<Eigen::Vector3d> RK4(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist);
+  // sat_idだけ指定する形でもいいかも
+  void RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist, Eigen::MatrixXd& Phi);
   Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
   Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist) const;
   void AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const;
   Eigen::MatrixXd UpdateM();
-  Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, const Eigen::Vector3d& acceleration) const;
+  Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+  Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position_main, const Eigen::Vector3d& velocity_main, const Eigen::Vector3d& position_target, const Eigen::Vector3d& velocity_target);
   Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
   Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
   void CalculateQ(void);
@@ -133,6 +136,7 @@ private:
   void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
   Eigen::VectorXd ConvReceivePosToCenterOfMass(Eigen::VectorXd x_state);
   Eigen::VectorXd ConvCenterOfMassToReceivePos(Eigen::VectorXd x_state);
+  void InitLogTable(void);
 
   int num_of_gnss_satellites_;
 
@@ -151,7 +155,6 @@ private:
 
   // void MakeDoubleDifference();
   int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
-  Eigen::MatrixXd CalculateSTM(void);
   void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd Phi, Eigen::MatrixXd H);
 };
 #endif
