@@ -27,11 +27,11 @@ const double sigma_acc_r_process = 500; // 7500;   //[nm/s^2]
 const double sigma_acc_t_process = 200; // 1000;   //[nm/s^2]
 const double sigma_acc_n_process = 100; // 500;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
-const double sigma_cdt_process   = 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
+const double sigma_cdt_process   = 1.0; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
-const double sigma_N_process     = 0; // 0.10;    //[cycle]
+const double sigma_N_process     = 0.10;    //[cycle]
 // clock noise model parameters of receiver
-const double clock_sigma     = 0.25;  //[m] 0.1 で<- 0.1nsくらいになる．これは今white noiseになっている．
+const double clock_sigma     = 1.0; // 0.25; //[m] 0.1 で<- 0.1nsくらいになる．これは今white noiseになっている．
 
 const double mu_e_spice = 398600435436095.94;
 const double mu_e = mu_e_spice;

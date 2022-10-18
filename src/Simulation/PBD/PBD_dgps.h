@@ -22,6 +22,23 @@
 class PBD_dgps
 {
 public:
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
+  ~PBD_dgps();
+  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
+  void OrbitPropagation();
+  //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
+  void KalmanFilter();
+  void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
+  void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
+
+private:
+  PBD_GeoPotential* geo_potential_;
+
+  // main satellite
+  const Dynamics& main_dynamics_;
+  // target satellite
+  const Dynamics& target_dynamics_;
+
   // FIXME:データ構造は要検討．この構造にしていいのか？
   struct Ambiguity
   {
@@ -45,26 +62,6 @@ public:
     const double lambda = L1_lambda; // wave length [m]
   };
 
-  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
-  ~PBD_dgps();
-  void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
-  void OrbitPropagation();
-  void SetBiasToObservation(const int sat_id, EstimatedVariables& x_est, PBD_GnssObservation& gnss_observation);
-  // そもそもこれをpublicにしている理由がないか．
-  void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est);
-  //void calculate_difference_observation(GnssObservedValues& gnss_observed_values, GnssObservedValues& gnss_true, const int sat_id, Eigen::MatrixXd& pre_M);
-  void KalmanFilter();
-  void RemoveRows(Eigen::MatrixXd& matrix, unsigned int begin_row, unsigned int end_row);
-  void RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, unsigned int end_col);
-
-private:
-  PBD_GeoPotential* geo_potential_;
-
-  // main satellite
-  const Dynamics& main_dynamics_;
-  // target satellite
-  const Dynamics& target_dynamics_;
-
   EstimatedVariables x_est_main;
   EstimatedVariables x_est_target;
 
@@ -78,7 +75,7 @@ private:
   std::vector<EstimatedVariables> x_est_; // 状態量ベクトル
 
   std::vector<libra::Vector<3>> antenna_pos_b_;
-  std::vector<PBD_GnssObservation> gnss_observations_;  // 参照を受け取る
+  std::vector<PBD_GnssObservation> gnss_observations_{};
 
   struct GnssObserveModel
   {
@@ -86,8 +83,11 @@ private:
     std::vector<double> pseudo_range_model;
     std::vector<double> carrier_phase_range_model;
   };
-
   std::vector<GnssObserveModel> gnss_observed_models_; // = { &main_model, &target_model };
+
+  std::vector<int> visible_gnss_nums_{0, 0, 0}; // main, target, common
+  std::vector<int> pre_visible_gnss_nums_{0, 0}; // main, target
+
 
   //初期化をもっとスマートにできるように考える
   //ここら辺も構造体にまとめるか．
@@ -97,10 +97,10 @@ private:
   // air drag balistic coeficient
   const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
 
-  Eigen::MatrixXd M;
+  Eigen::MatrixXd P_;
   Eigen::MatrixXd Phi_;
-  Eigen::MatrixXd Q;
-  Eigen::MatrixXd R;
+  Eigen::MatrixXd Q_;
+  Eigen::MatrixXd R_;
 
   double step_time;
   double observe_step_time = 10.0;
@@ -111,33 +111,6 @@ private:
   // log用
   std::ofstream ofs;
 
-  void InitAmbiguity(EstimatedVariables& x_est);
-  // sat_idだけ指定する形でもいいかも
-  void RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist, Eigen::MatrixXd& Phi);
-  Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
-  Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist) const;
-  void AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const;
-  Eigen::MatrixXd UpdateM();
-  Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-  Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position_main, const Eigen::Vector3d& velocity_main, const Eigen::Vector3d& position_target, const Eigen::Vector3d& velocity_target);
-  Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-  Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
-  void CalculateQ(void);
-  Eigen::MatrixXd CalculatePhi_a(const double dt);
-  Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
-  void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-  void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-  void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
-  void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
-  void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
-  void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
-  void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
-  void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
-  void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
-  Eigen::VectorXd ConvReceivePosToCenterOfMass(Eigen::VectorXd x_state);
-  Eigen::VectorXd ConvCenterOfMassToReceivePos(Eigen::VectorXd x_state);
-  void InitLogTable(void);
-
   int num_of_gnss_satellites_;
 
   // receiver clock biasの真値[m] <- これはログ用にしか使ってないからイランかも
@@ -147,7 +120,38 @@ private:
   std::random_device seed_gen;
   std::mt19937 mt;
 
-  Eigen::VectorXd CalculateSingleDifference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
+
+  void InitAmbiguity(EstimatedVariables& x_est);
+  // sat_idだけ指定する形でもいいかも
+  void RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist, Eigen::MatrixXd& Phi);
+  Eigen::Vector3d PositionDifferential(const Eigen::Vector3d& velocity) const;
+  Eigen::Vector3d VelocityDifferential(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist) const;
+  void AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const;
+  Eigen::MatrixXd UpdateP(void);
+  Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+  // Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position_main, const Eigen::Vector3d& velocity_main, const Eigen::Vector3d& position_target, const Eigen::Vector3d& velocity_target);
+  Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
+  Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
+  void CalculateQ(const int n_main, const int n_target);
+  Eigen::MatrixXd CalculatePhi_a(const double dt);
+  Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
+  void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
+  void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
+  void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
+  void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv, const int N_offset);
+  void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+  void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+  void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
+  void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P);
+  void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
+  void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
+  Eigen::VectorXd ConvReceivePosToCenterOfMass(Eigen::VectorXd x_state);
+  Eigen::VectorXd ConvCenterOfMassToReceivePos(Eigen::VectorXd x_state);
+  void InitLogTable(void);
+  void PBD_dgps::InitializePhi(void);
+  void ClearGnssObserveModels(GnssObserveModel& observed_model);
+
+  // Eigen::VectorXd CalculateSingleDifference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
   // 一旦singleだけにする
   //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
 
@@ -155,6 +159,6 @@ private:
 
   // void MakeDoubleDifference();
   int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
-  void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd Phi, Eigen::MatrixXd H);
+  void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H);
 };
 #endif

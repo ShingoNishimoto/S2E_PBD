@@ -65,8 +65,11 @@ public:
   double CalculateGeometricRange(const libra::Vector<3> sat_position, libra::Vector<3> gnss_position) const;
 
   // ここら辺を介す構成はやめたい．
-  inline const libra::Vector<3> GetAntennaAlignmentError(void) { return receiver_->GetAlignmentError(); };
-  inline const libra::Vector<3> GetAntennaPosition (void) { return receiver_->GetAntennaPositionBody(); };
+  inline const libra::Vector<3> GetAntennaAlignmentError(void) { return receiver_->GetAlignmentError(); }
+  inline const libra::Vector<3> GetAntennaPosition (void) { return receiver_->GetAntennaPositionBody(); }
+  // inline GnssObserveInfo GetObserveInfo(void) const {return info_;}
+  inline const int GetNowVisibleGnssNum(void) const {return info_.now_observed_gnss_sat_id.size();}
+  inline const int GetPreVisibleGnssNum(void) const {return info_.pre_observed_gnss_sat_id.size();}
 
   GnssObservedValues true_values_; // trueは要らんかも
   GnssObservedValues observed_values_;
@@ -77,7 +80,6 @@ public:
 
   // receiver clock biasの真値[m]
   double receiver_clock_bias_;
-
   //マスク角 [rad] <- これは衛星ごとに異なることが想定されるのでiniファイルとかで指定すべきでは？
   const double mask_angle = 10.0 / 180.0 * M_PI;
 

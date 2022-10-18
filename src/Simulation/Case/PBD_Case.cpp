@@ -73,7 +73,6 @@ void PBD_Case::Main()
       // 実際はここの中でGNSS観測情報の更新をしたい．
       spacecraft->Update(&(sim_time));
       // コンポーネントの更新もここでやるのか？MainRoutineがどこで呼ばれているのかが不明．．．
-
     }
     pbd_->Update(sim_time, glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), glo_env_->GetCelesInfo().GetEarthRotation());
     // Debug output
