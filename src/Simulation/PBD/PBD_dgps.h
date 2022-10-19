@@ -132,7 +132,7 @@ private:
   // Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position_main, const Eigen::Vector3d& velocity_main, const Eigen::Vector3d& position_target, const Eigen::Vector3d& velocity_target);
   Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
   Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
-  void CalculateQ(const int n_main, const int n_target);
+  void InitializeQ();
   Eigen::MatrixXd CalculatePhi_a(const double dt);
   Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
   void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
@@ -142,7 +142,7 @@ private:
   void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
   void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
   void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
-  void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P);
+  void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q);
   void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
   void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
   Eigen::VectorXd ConvReceivePosToCenterOfMass(Eigen::VectorXd x_state);
@@ -150,6 +150,7 @@ private:
   void InitLogTable(void);
   void PBD_dgps::InitializePhi(void);
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
+  void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);
 
   // Eigen::VectorXd CalculateSingleDifference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
   // 一旦singleだけにする

@@ -38,7 +38,7 @@
 
 static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 static const double PBD_DGPS_kConvNm2m = 1e-9;
-static const int precision = 7; // position
+static const int precision = 10; // position
 
 // template使っていい感じにしたい．
 // template <typename T> static void LogOutput(const )
@@ -121,7 +121,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   P_ = V.asDiagonal(); // 誤差分散共分散行列P 初めはN無し
 
   // Process noise Q_
-  CalculateQ(0, 0);
+  InitializeQ();
   // visible_gnss_nums_ = {0, 0, 0};
 
   // Measurement noise R_
@@ -214,26 +214,30 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     visible_gnss_nums_.push_back(target_observation_.GetNowVisibleGnssNum());
     int n_main = pre_visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
+    Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
     int n_target = pre_visible_gnss_nums_.at(1);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
+    Eigen::MatrixXd Q_target = Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
 
     // 共通衛星見つける
     FindCommonObservedGnss(std::make_pair(0, 1));
     visible_gnss_nums_.push_back(common_observed_gnss_sat_id.size());
 
-    UpdateBiasForm(0, x_est_main, P_main);
-    UpdateBiasForm(1, x_est_target, P_target);
+    UpdateBiasForm(0, x_est_main, P_main, Q_main);
+    UpdateBiasForm(1, x_est_target, P_target, Q_target);
     const int new_size_all = P_main.rows() + P_target.rows();
     P_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
+    Q_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
     int n_main_new = visible_gnss_nums_.at(0);
     P_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = P_main;
+    Q_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = Q_main;
     int n_target_new = visible_gnss_nums_.at(1);
     P_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = P_target;
+    Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = Q_target;
 
     KalmanFilter();
 
     // for log <- なくしたい．
-    CalculateQ(visible_gnss_nums_.at(0), visible_gnss_nums_.at(1));
     InitializePhi();
 
     // ここで観測情報を次用に更新する．
@@ -309,12 +313,19 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       else ofs << 0 << ",";
     }
 
-    // FIXME: ここもRTNに変換する．
     const int non_visible_num_main = NUM_GNSS_CH - visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
     LogOutput_(ofs, P_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE + visible_gnss_nums_.at(1));
     LogOutput_(ofs, P_target, NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE_ALL);
+
+    // RTNでのcovariance(r, vのみ)
+    TransECI2RTN_P(P_main, trans_eci_to_rtn_main);
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_main(i, i) << ","; // P_rtn_main (position)
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_main(4 + i, 4 + i) << ","; // P_rtn_main (velocity)
+    TransECI2RTN_P(P_target, trans_eci_to_rtn_target);
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_target(i, i) << ","; // P_rtn_target (position)
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_target(4 + i, 4 + i) << ","; // P_rtn_target (velocity)
 
     // record visible gnss sat number
     // そもそもここでログをとるのが適切ではない．
@@ -333,6 +344,7 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       if (i >= visible_gnss_nums_.at(1)) ofs << -1 << ",";
       else ofs << gnss_observations_.at(1).info_.now_observed_gnss_sat_id.at(i) << ",";
     }
+
     // Q_
       Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
     LogOutput_(ofs, Q_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
@@ -375,6 +387,15 @@ void PBD_dgps::InitializePhi(void)
   Phi_ = Eigen::Matrix<double, NUM_STATE, NUM_STATE>::Identity();
   Phi_(3, 3) = 0.0;
   Phi_(NUM_SINGLE_STATE + 3, NUM_SINGLE_STATE + 3) = 0.0;
+}
+
+void PBD_dgps::TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn)
+{
+  Eigen::Matrix3d P_pos = P.topLeftCorner(3, 3);
+  Eigen::Matrix3d P_vel = P.block(4, 4, 3, 3);
+
+  P.topLeftCorner(3, 3) = trans_eci_to_rtn * P_pos * trans_eci_to_rtn.transpose();
+  P.block(4, 4, 3, 3) = trans_eci_to_rtn * P_vel * trans_eci_to_rtn.transpose();
 }
 
 
@@ -548,7 +569,7 @@ Eigen::MatrixXd PBD_dgps::UpdateP(void)
 #ifdef AKF
   // ここでは更新しない．更新しないつもりなのに初期値に依存しているってことは更新されてしまっている？
 #else
-  CalculateQ(n_main, n_target);
+  InitializeQ();
 #endif // AKF
 
   Eigen::MatrixXd res = Phi_all * P_ * Phi_all.transpose() + Q_;
@@ -644,9 +665,10 @@ Eigen::Matrix3d PBD_dgps::TransRTN2ECI(const Eigen::Vector3d& position, const Ei
   return RTN2ECI;
 };
 
-// tに対するノイズの加え方が間違っている気がする．これのせいか？
-void PBD_dgps::CalculateQ(const int n_main, const int n_target)
+void PBD_dgps::InitializeQ(void)
 {
+  const int n_main = visible_gnss_nums_.at(0);
+  const int n_target = visible_gnss_nums_.at(1);
   const int num_state_all = NUM_STATE + n_main + n_target;
   const int num_state_main = NUM_SINGLE_STATE + n_main;
   Eigen::MatrixXd B = Eigen::MatrixXd::Zero(num_state_all, 8); // aとclock
@@ -662,6 +684,7 @@ void PBD_dgps::CalculateQ(const int n_main, const int n_target)
 
   // Q_ = BQ_atB^t
   Q_ = B * Q_at * B.transpose();
+
   // add process noise for r and v
   Q_.block(0, 0, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
   Q_.block(4, 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
@@ -768,11 +791,11 @@ void PBD_dgps::KalmanFilter()
   // innovationの記号を何にするかは要検討
   Eigen::VectorXd E_pre = z - h_x;
   // まずアンテナ位置に変換
-  // Eigen::VectorXd x_ant_predict = ConvCenterOfMassToReceivePos(x_predict);
-  // Eigen::VectorXd x_update = x_ant_predict + K * E_pre;
-  Eigen::VectorXd x_update = x_predict + K * E_pre;
+  Eigen::VectorXd x_ant_predict = ConvCenterOfMassToReceivePos(x_predict);
+  Eigen::VectorXd x_update = x_ant_predict + K * E_pre;
+  // Eigen::VectorXd x_update = x_predict + K * E_pre;
   // 重心位置に戻す．
-  // x_update = ConvReceivePosToCenterOfMass(x_update); // 参照渡しにしてもいいかも
+  x_update = ConvReceivePosToCenterOfMass(x_update);
 
  //更新
   x_est_main.position = x_update.topRows(3);
@@ -816,7 +839,6 @@ void PBD_dgps::KalmanFilter()
   // FIXME: ここでSDCPの精度がめっちゃ悪いことになってしまっているのが原因な気がする．
   R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() + H*P_*H.transpose()); // residual based R_-adaptation
 
-  CalculateQ(n_main, n_target); // 応急処置として
   Eigen::MatrixXd Q_dash = alpha * Q_ + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
 
   DynamicNoiseScaling(Q_dash, H);
@@ -1248,7 +1270,7 @@ Eigen::VectorXd PBD_dgps::ConvCenterOfMassToReceivePos(Eigen::VectorXd x_state)
 }
 
 
-void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P)// LEO衛星の数が増えたときは衛星ごとにこのクラスのインスタンスが生成される？ので一旦これで行く
+void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q)// LEO衛星の数が増えたときは衛星ごとにこのクラスのインスタンスが生成される？ので一旦これで行く
 {
   const PBD_GnssObservation& gnss_observation = gnss_observations_.at(sat_id);
   const GnssObserveInfo& observe_info_ = gnss_observation.info_;
@@ -1267,12 +1289,15 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
 
   const std::vector<double> pre_estimated_bias = x_est.ambiguity.N;
   const Eigen::MatrixXd pre_P = P;
+  const Eigen::MatrixXd pre_Q = Q;
   // reset
   const int num_state_all = NUM_SINGLE_STATE + n;
   const int pre_num_state_all = NUM_SINGLE_STATE + n_pre;
   P = Eigen::MatrixXd::Zero(num_state_all, num_state_all);
+  Q = Eigen::MatrixXd::Zero(num_state_all, num_state_all);
   P.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE) = pre_P.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
   x_est.ambiguity.N.assign(NUM_GNSS_CH, 0); // resetする．
+  Q.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE) = pre_Q.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
 
   // for debug
   std::vector<int> now_gnss_sat_ids = observe_info_.now_observed_gnss_sat_id;
@@ -1300,6 +1325,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // P.block(0, offset, num_state_all, 1) = Eigen::MatrixXd::Zero(num_state_all, 1);
       // P.block(offset, 0, 1, num_state_all) = Eigen::MatrixXd::Zero(1, num_state_all);
       P(offset, offset) = pow(sigma_N_ini, 2.0);
+      Q(offset, offset) = pow(sigma_N_process, 2.0);
       ++now_index;
     }
     // 引き継ぐ
@@ -1327,6 +1353,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
 
       // 対角成分の引継ぎ
       P(NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE + now_index) = pre_P(NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE + pre_index);
+      Q(NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE + now_index) = pre_Q(NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE + pre_index);
       ++pre_index; ++now_index;
     }
 

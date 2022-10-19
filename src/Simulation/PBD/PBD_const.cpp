@@ -16,13 +16,13 @@ const double sigma_acc_r_ini = 1000; // 150; //[nm/s^2]
 const double sigma_acc_t_ini = 2000; // 300; //[nm/s^2]
 const double sigma_acc_n_ini = 750; // 200;  //[nm/s^2]
 const double sigma_cdt_ini   = 5;    //[m]
-const double sigma_N_ini     = 10.0;   //[cycle]
+const double sigma_N_ini     = 0.5;   //[cycle] これももう少し現実にそった値にする．
 // observation noise
 const double pseudo_sigma    = 0.25; //[m]
 const double carrier_sigma   = 5*1e-3; //[m]
 // process noise
-const double sigma_r_process = 0.0001;    //[m]
-const double sigma_v_process = 5 * 1e-5;   //[m/s]
+const double sigma_r_process = 0.001;    //[m]
+const double sigma_v_process = 5 * 1e-4;   //[m/s]
 const double sigma_acc_r_process = 500; // 7500;   //[nm/s^2]
 const double sigma_acc_t_process = 200; // 1000;   //[nm/s^2]
 const double sigma_acc_n_process = 100; // 500;    //[nm/s^2]
