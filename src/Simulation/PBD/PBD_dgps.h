@@ -1,7 +1,7 @@
 #ifndef __PBD_dgps_H__
 #define __PBD_dgps_H__
 
-#include "Dense" // Eigen
+#include <Dense> // Eigen
 
 #include <vector>
 #define _USE_MATH_DEFINES
@@ -152,13 +152,7 @@ private:
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);
 
-  // Eigen::VectorXd CalculateSingleDifference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
-  // 一旦singleだけにする
-  //double calculate_double_difference(const Eigen::VectorXd& main_observation, const Eigen::VectorXd& target_observation) const;
-
   template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
-
-  // void MakeDoubleDifference();
   int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
   void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H);
 };

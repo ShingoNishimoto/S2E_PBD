@@ -2,6 +2,8 @@
 #include "../../Simulation/Spacecraft/PBD_Components.h"
 #include <Library/math/GlobalRand.h>
 
+#define FIXED_ALIGNMENT
+
 PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
                const AntennaModel antenna_model, const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
                const Vector<3> noise_std, const Vector<3> alignment_err_std, const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
@@ -11,9 +13,16 @@ PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_ge
                nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
                nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed())
 {
+#ifdef FIXED_ALIGNMENT
+// stdではなくて，固定誤差として与えてあげる．
+  alignment_err_b_[0] = alignment_err_std[0];
+  alignment_err_b_[1] = alignment_err_std[1];
+  alignment_err_b_[2] = alignment_err_std[2];
+#else
   alignment_err_b_[0] = nrs_antenna_b_x_;
   alignment_err_b_[1] = nrs_antenna_b_y_;
   alignment_err_b_[2] = nrs_antenna_b_z_;
+#endif // FIXED_ALIGNMENT
 }
 
 void PBD_GNSSReceiver::MainRoutine(int count)
@@ -56,8 +65,7 @@ void PBD_GNSSReceiver::UpdateReceivePosition(Quaternion q_i2b)
   Vector<3> gnss_sat_pos_i, sat2ant_design_i, sat2ant_true_i;
 
   // antenna normal vector at inertial frame
-  Vector<3> antenna_direction_c(0.0);
-  antenna_direction_c[2] = 1.0; // PZに搭載
+  Vector<3> antenna_direction_c = (1 / libra::norm(antenna_position_b_)) * antenna_position_b_;
   Vector<3> antenna_direction_b = q_b2c_.frame_conv_inv(antenna_direction_c);
   Vector<3> antenna_direction_i = q_i2b.frame_conv_inv(antenna_direction_b);
 
