@@ -41,7 +41,7 @@ void PBD_Case::Initialize()
     spacecraft->LogSetup(*(sim_config_.main_logger_));
   }
 
-  PBD_GeoPotential* geop = new PBD_GeoPotential(2, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
+  PBD_GeoPotential* geop = new PBD_GeoPotential(20, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
 
   pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop);
 

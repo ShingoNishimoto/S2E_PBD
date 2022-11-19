@@ -81,20 +81,28 @@ private:
   {
     std::vector<double> geometric_range;
     std::vector<double> pseudo_range_model;
-    std::vector<double> carrier_phase_range_model;
+    std::vector<double> carrier_phase_model;
   };
   std::vector<GnssObserveModel> gnss_observed_models_; // = { &main_model, &target_model };
 
+  // 参照したい情報をまとめたもの．この配列を持つことで参照して保持する．
+  struct SatelliteInfo
+  {
+    const Dynamics& dynamics;
+    EstimatedVariables& x_est;
+    Eigen::VectorXd true_N;
+  };
+  std::vector<SatelliteInfo> sat_info_;
+
   std::vector<int> visible_gnss_nums_{0, 0, 0}; // main, target, common
   std::vector<int> pre_visible_gnss_nums_{0, 0}; // main, target
-
 
   //初期化をもっとスマートにできるように考える
   //ここら辺も構造体にまとめるか．
   std::vector<bool> common_observed_status{};
   std::vector<int> common_observed_gnss_sat_id{};
 
-  // air drag balistic coeficient
+  // air drag ballistic coefficient
   const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
 
   Eigen::MatrixXd P_;
@@ -137,7 +145,6 @@ private:
   Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
   void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
   void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
-  void UpdateTrueAmbiguity(std::vector<std::vector<double>> N, const int gnss_sat_id, const double lambda);
   void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv, const int N_offset);
   void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
   void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
@@ -145,8 +152,8 @@ private:
   void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q);
   void AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
   void RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch);
-  Eigen::VectorXd ConvReceivePosToCenterOfMass(Eigen::VectorXd x_state);
-  Eigen::VectorXd ConvCenterOfMassToReceivePos(Eigen::VectorXd x_state);
+  Eigen::Vector3d ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
+  Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   void InitLogTable(void);
   void PBD_dgps::InitializePhi(void);
   void ClearGnssObserveModels(GnssObserveModel& observed_model);

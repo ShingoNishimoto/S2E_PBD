@@ -57,12 +57,12 @@ public:
 
   void Update(void);
   void UpdateGnssObservation();
-  void CalcIonfreeObservation();
   void UpdateInfoAfterObserved();
 
-  double CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock);
-  double CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda);
-  double CalculateGeometricRange(const libra::Vector<3> sat_position, libra::Vector<3> gnss_position) const;
+  double CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock) const;
+  double CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda) const;
+  double CalculateGeometricRange(const libra::Vector<3> rec_position, libra::Vector<3> gnss_position) const;
+  double CalculateIonDelay(const int gnss_id, const libra::Vector<3> rec_position, const double frequency) const; // GnssSatelliteとflag以外はIFをそろえている．
 
   // ここら辺を介す構成はやめたい．
   inline const libra::Vector<3> GetAntennaAlignmentError(void) { return receiver_->GetAlignmentError(); }
@@ -75,8 +75,8 @@ public:
   GnssObservedValues observed_values_;
   GnssObserveInfo info_;
   int num_of_gnss_satellites_;
-  std::vector<double> l1_bias_{};
-  std::vector<double> l2_bias_{};
+  std::vector<double> l1_bias_; // 初期捕捉時に確定するバイアス成分（捕捉している間は固定）
+  std::vector<double> l2_bias_; // 初期捕捉時に確定するバイアス成分（捕捉している間は固定）
 
   // receiver clock biasの真値[m]
   double receiver_clock_bias_;
@@ -90,6 +90,7 @@ private:
   //アンテナの中心の向きが、常に反地球方向を向いているとして、適当にマスク角を取って、その中にいるとする
   bool CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const;
   void ClearPreValues(GnssObservedValues& values);
+  void ProcessGnssObservations(void);
 
   // std::random_device seed_gen;
   std::mt19937 mt;
