@@ -70,6 +70,8 @@ public:
   // inline GnssObserveInfo GetObserveInfo(void) const {return info_;}
   inline const int GetNowVisibleGnssNum(void) const {return info_.now_observed_gnss_sat_id.size();}
   inline const int GetPreVisibleGnssNum(void) const {return info_.pre_observed_gnss_sat_id.size();}
+  inline const double GetGnssElevationDeg(const int ch) {return receiver_->GetGnssInfo(ch).latitude * libra::rad_to_deg;}
+  inline const double GetGnssAzimuthDeg(const int ch) {return receiver_->GetGnssInfo(ch).longitude * libra::rad_to_deg;}
 
   GnssObservedValues true_values_; // trueは要らんかも
   GnssObservedValues observed_values_;

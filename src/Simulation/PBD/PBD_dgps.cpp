@@ -376,6 +376,29 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     Eigen::Vector3d acc_dist_t_rtn = trans_eci_to_rtn_target * x_est_target.acc_dist; // [m/s2]
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_dist_m_rtn(i) << ","; // a_disturbance_m_rtn
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_dist_t_rtn(i) << ","; // a_disturbance_t_rtn
+
+    // azimuth elevation
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssAzimuthDeg(i) << ","; // azimuth main
+      else ofs << 0 << ",";
+    }
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssElevationDeg(i) << ","; // elevation main
+      else ofs << 0 << ",";
+    }
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssAzimuthDeg(i) << ","; // azimuth target
+      else ofs << 0 << ",";
+    }
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssElevationDeg(i) << ","; // elevation target
+      else ofs << 0 << ",";
+    }
+
     ofs << std::endl;
   }
 
