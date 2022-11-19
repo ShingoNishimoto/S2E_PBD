@@ -1,24 +1,27 @@
-## General Settings
+# # General Settings
 cmake_policy(SET CMP0048 NEW)
+
 # set(CMAKE_CXX_STANDARD 14)
 project(S2E_PBD
-    LANGUAGES CXX
-    DESCRIPTION "S2E_PBD"
-    VERSION 1.0
+  LANGUAGES CXX
+  DESCRIPTION "S2E_PBD"
+  VERSION 1.0
 )
 
 cmake_minimum_required(VERSION 3.13)
 
 # preprocessor
 if(WIN32)
-	add_definitions(-DWIN32)
+  add_definitions(-DWIN32)
 endif()
 
-## set directory path
+# # set directory path
 set(S2E_CORE_DIR ../s2e-core_pbd)
+
 if(NOT DEFINED EXT_LIB_DIR)
   set(EXT_LIB_DIR ../ExtLibraries)
 endif()
+
 set(CSPICE_DIR ${EXT_LIB_DIR}/cspice)
 set(NRLMSISE00_DIR ${EXT_LIB_DIR}/nrlmsise00)
 set(EIGEN_DIR ${EXT_LIB_DIR}/Eigen)
@@ -26,23 +29,27 @@ set(EIGEN_DIR ${EXT_LIB_DIR}/Eigen)
 if(NOT DEFINED FLIGHT_SW_DIR)
   set(FLIGHT_SW_DIR ../FlightSW)
 endif()
+
 if(NOT DEFINED C2A_NAME)
   set(C2A_NAME "c2a_oss")
 endif()
+
 set(FLIGHT_SW_DIR ../FlightSW)
 
 if(WIN32)
 elseif(APPLE)
-  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ./out)  #set build path
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ./out) # set build path
 endif()
 
-## options to use C2A
+# # options to use C2A
 option(USE_C2A "Use C2A")
 set(USE_C2A OFF)
+
 if(USE_C2A)
   add_definitions(-DUSE_C2A)
   add_definitions(-DSILS_FW)
-  #include_directories
+
+  # include_directories
   include_directories(${C2A_DIR}/SH7254R_C2A/src_core/System/AnomalyLogger)
   include_directories(${C2A_DIR}/SH7254R_C2A/src_core/System/ApplicationManager)
   include_directories(${C2A_DIR}/SH7254R_C2A/src_core/System/ModeManager)
@@ -52,14 +59,15 @@ if(USE_C2A)
   include_directories(${C2A_DIR}/SH7254R_C2A/src_core/CmdTlm)
   include_directories(${C2A_DIR}/SH7254R_C2A/src_user/Applications)
   include_directories(${S2E_CORE_DIR}/src/Interface/SpacecraftInOut)
-  #add subdirectory
+
+  # add subdirectory
   add_subdirectory(${C2A_DIR} C2A_CORE)
   message("USE C2A")
 endif()
 
 set(S2E_DIR ${CMAKE_CURRENT_COURCE_DIR})
 
-## include directories of S2E-CORE
+# # include directories of S2E-CORE
 include_directories(${CSPICE_DIR}/include)
 include_directories(${NRLMSISE00_DIR}/src)
 include_directories(${S2E_CORE_DIR}/src)
@@ -93,7 +101,7 @@ include_directories(${S2E_CORE_DIR}/src/Simulation/InterSatComm)
 include_directories(${S2E_CORE_DIR}/src/Simulation/InterSatComm/Abstract)
 include_directories(${S2E_CORE_DIR}/src/RelativeInformation)
 
-## add_subdirectories
+# # add_subdirectories
 add_subdirectory(${S2E_CORE_DIR}/src/Component S2E_CORE/Component)
 add_subdirectory(${S2E_CORE_DIR}/src/Disturbance S2E_CORE/Disturbance)
 add_subdirectory(${S2E_CORE_DIR}/src/Dynamics S2E_CORE/Dynamics)
@@ -127,6 +135,7 @@ set(SOURCE_FILES
   src/Simulation/InterSatComm/RFSystem/RFSystemBeam.cpp
   src/Simulation/PBD/PBD_dgps.cpp
   src/Simulation/PBD/PBD_GnssObservation.cpp
+  src/Simulation/PBD/PBD_GeoPotential.cpp
   src/Simulation/PBD/PBD_Lambda.cpp
   src/Simulation/PBD/PBD_const.cpp
   src/Component/CDH/OBC_Sat0.cpp
@@ -138,9 +147,12 @@ set(SOURCE_FILES
   src/Interface/InitInput/InitComponent/InitRFSystemReceiver.cpp
   src/Interface/InitInput/InitComponent/InitRFSystemTransmitter.cpp
   src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
+  src/Library/VectorTool.hpp
 )
+
 # Create executable file
 add_executable(${PROJECT_NAME} ${SOURCE_FILES})
+
 # Compile option
 if(MSVC)
   target_compile_options(${PROJECT_NAME} PUBLIC "/W4")
@@ -151,9 +163,9 @@ else()
   set(CMAKE_C_FLAGS "-m32 -rdynamic -Wall -g")
 endif()
 
-## cspice library
+# # cspice library
 if(CYGWIN)
-  SET (CMAKE_FIND_LIBRARY_SUFFIXES ".so" ".a")
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".so" ".a")
   find_library(CSPICE_LIB
     NAMES cspice.a csupport.a
     PATHS ${CSPICE_DIR}/cspice_cygwin/lib)
@@ -162,36 +174,38 @@ elseif(UNIX)
     NAMES cspice.a csupport.a
     PATHS ${CSPICE_DIR}/cspice_unix/lib)
 elseif(WIN32)
-  SET (CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
   find_library(CSPICE_LIB
     NAMES cspice.lib csupport.lib
     PATHS ${CSPICE_DIR}/cspice_msvs/lib)
 endif()
+
 if(NOT CSPICE_LIB)
   message(FATAL_ERROR "cspice not found in ${EXT_LIB_DIR}")
 endif()
 
-## nrlmsise00 library
+# # nrlmsise00 library
 if(CYGWIN)
-  SET (CMAKE_FIND_LIBRARY_SUFFIXES ".a")
-  find_library(NRLMSISE00_LIB 
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".a")
+  find_library(NRLMSISE00_LIB
     NAMES libnrlmsise00.a
     PATHS ${NRLMSISE00_DIR}/lib)
 elseif(UNIX)
-  find_library(NRLMSISE00_LIB 
+  find_library(NRLMSISE00_LIB
     NAMES libnrlmsise00.a
     PATHS ${NRLMSISE00_DIR}/lib)
 elseif(WIN32)
-  SET (CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
-  find_library(NRLMSISE00_LIB 
+  SET(CMAKE_FIND_LIBRARY_SUFFIXES ".lib")
+  find_library(NRLMSISE00_LIB
     NAMES libnrlmsise00.lib
     PATHS ${NRLMSISE00_DIR}/lib)
 endif()
+
 if(NOT NRLMSISE00_LIB)
   message(FATAL_ERROR "nrlmsise00 not found in ${EXT_LIB_DIR}")
 endif()
 
-## Linking libraries
+# # Linking libraries
 set(S2E_LIBRARIES
   IGRF WRAPPER_NRLMSISE00 INIH SGP4 UTIL OPTICS RELATIVE_ORBIT_MODELS ORBIT_MODELS GEODESY MATH
 )
@@ -214,12 +228,12 @@ target_link_libraries(${PROJECT_NAME} INI_ACC LOG_OUT SC_IO)
 target_link_libraries(${PROJECT_NAME} COMPONENT)
 target_link_libraries(${PROJECT_NAME} HILS_IO)
 
-## C2A integration
+# # C2A integration
 if(USE_C2A)
   target_link_libraries(${PROJECT_NAME} C2A)
 endif()
 
-## HILS
+# # HILS
 if(USE_HILS)
   target_link_libraries(${PROJECT_NAME} ${WS2_32_LIB})
   set_target_properties(${PROJECT_NAME} PROPERTIES COMMON_LANGUAGE_RUNTIME "")
@@ -233,8 +247,8 @@ if(USE_HILS)
   set_target_properties(RELATIVE_INFO PROPERTIES COMMON_LANGUAGE_RUNTIME "")
 endif()
 
-## Cmake debug
-message("Cspice_LIB:  "${CSPICE_LIB})
-message("nrlmsise00_LIB:  "${NRLMSISE00_LIB})
+# # Cmake debug
+message("Cspice_LIB:  " ${CSPICE_LIB})
+message("nrlmsise00_LIB:  " ${NRLMSISE00_LIB})
 
 include(${S2E_CORE_DIR}/common.cmake)

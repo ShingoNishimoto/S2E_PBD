@@ -1,5 +1,6 @@
 #include "PBD_Case.h"
 #include <Interface/InitInput/IniAccess.h>
+#include "../PBD/PBD_GeoPotential.hpp"
 
 PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
@@ -32,7 +33,6 @@ void PBD_Case::InitializeSpacecrafts()
 void PBD_Case::Initialize()
 {
   InitializeSpacecrafts();
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_)); // ここはGetterとか使った方がいい．
 
   //Register the log output
   glo_env_->LogSetup(*(sim_config_.main_logger_));
@@ -40,6 +40,10 @@ void PBD_Case::Initialize()
   {
     spacecraft->LogSetup(*(sim_config_.main_logger_));
   }
+
+  PBD_GeoPotential* geop = new PBD_GeoPotential(20, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
+
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop);
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
@@ -63,14 +67,14 @@ void PBD_Case::Main()
     // Global Environment Update
     glo_env_->Update();
     // Spacecraft Update
+    const SimTime sim_time = glo_env_->GetSimTime();
     for (auto& spacecraft : spacecrafts_)
     {
       // 実際はここの中でGNSS観測情報の更新をしたい．
-      spacecraft->Update(&(glo_env_->GetSimTime()));
+      spacecraft->Update(&(sim_time));
       // コンポーネントの更新もここでやるのか？MainRoutineがどこで呼ばれているのかが不明．．．
-
     }
-    pbd_->Update(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_));
+    pbd_->Update(sim_time, glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), glo_env_->GetCelesInfo().GetEarthRotation());
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
     {

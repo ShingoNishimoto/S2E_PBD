@@ -19,7 +19,9 @@ bool GnssObservedValues::check_normal()
 PBD_GnssObservation::PBD_GnssObservation(PBD_GNSSReceiver* gnss_receiver, const GnssSatellites& gnss_satellites) : receiver_(gnss_receiver), gnss_satellites_(gnss_satellites)
 {
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites();
-  // 初期化
+  std::vector<double> zeros(num_of_gnss_satellites_, 0.0);
+  l1_bias_ = zeros;
+  l2_bias_ = zeros;
   info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
@@ -33,14 +35,14 @@ void PBD_GnssObservation::Update(void)
   // receiver clock
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
   receiver_clock_bias_ = receiver_clock_dist(mt);
-  // ここで毎回呼ぶと軌道情報が更新されてなくて死ぬ．
   UpdateGnssObservation();
+  ProcessGnssObservations();
 }
 
 void PBD_GnssObservation::UpdateGnssObservation()
 {
   //推定値の計算
-  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 更新 <- ?
+  num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 時刻によって利用可能衛星数が変化するので更新
   // ここでMainRoutineを呼べばいいだけではあった．constのままでしたいな．
 
   const libra::Vector<3> antenna_position_i = receiver_->GetAntennaPositionTrueECI(); // ECI
@@ -71,22 +73,12 @@ void PBD_GnssObservation::UpdateGnssObservation()
 
     libra::Vector<3> phase_position_i = receiver_->GetPhaseReceivePositionTrueECI();
     // この中に整数不定性を入れてないのがダメなのでは？
+
     auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L1_frequency);
     auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L2_frequency);
 
-    double ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-    double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * (l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda * (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-
-    true_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
-    true_values_.gnss_satellites_position.push_back(gnss_position);
-    true_values_.gnss_clock.push_back(gnss_clock);
-    true_values_.L1_pseudo_range.push_back(l1_pseudo_range);
-    true_values_.L2_pseudo_range.push_back(l2_pseudo_range);
-    true_values_.L1_carrier_phase.push_back(l1_carrier_phase);
-    true_values_.L2_carrier_phase.push_back(l2_carrier_phase);
-
-    true_values_.ionfree_pseudo_range.push_back(ionfree_range);
-    true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+    // double ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
+    // double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * (l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda * (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
 
     // 観測情報の方には観測誤差を混ぜる
     std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
@@ -102,34 +94,25 @@ void PBD_GnssObservation::UpdateGnssObservation()
     l1_carrier_phase.first += carrier_phase_noise(mt) / L1_lambda;
     l2_carrier_phase.first += carrier_phase_noise(mt) / L2_lambda;
 
-    ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-    ionfree_phase = L2_lambda * (L1_frequency / L2_frequency * (l1_carrier_phase.first + l1_carrier_phase.second) - (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
+    // ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
 
     observed_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
     observed_values_.gnss_satellites_position.push_back(gnss_position);
     observed_values_.gnss_clock.push_back(gnss_clock);
     observed_values_.L1_pseudo_range.push_back(l1_pseudo_range);
     observed_values_.L2_pseudo_range.push_back(l2_pseudo_range);
+    // 一旦真の値を入れる．
     observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
     observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
 
-    observed_values_.ionfree_pseudo_range.push_back(ionfree_range);
-    observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+    // observed_values_.ionfree_pseudo_range.push_back(ionfree_range);
+    // observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
   }
 }
 
-
-bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
+void PBD_GnssObservation::ProcessGnssObservations(void)
 {
-  // ここには姿勢の要素も入れなければいけない．
-  double angle_rad = angle(satellite_position, gnss_position - satellite_position);
-  if (angle_rad < M_PI / 2.0 - mask_angle) return true;
-  else return false;
-}
-
-// ionfreeの計算をしている．
-void PBD_GnssObservation::CalcIonfreeObservation()
-{
+  // ここの前半の処理はUpdateの方にまとめてもいいかも．
   int observed_gnss_index = 0;
   for (int i = 0; i < num_of_gnss_satellites_; ++i)
   {
@@ -140,46 +123,37 @@ void PBD_GnssObservation::CalcIonfreeObservation()
     }
     else if (info_.pre_observed_status.at(i) == false && info_.now_observed_status.at(i) == true)
     {
-      // (first + second)*lambda から真の距離引いてそこからN求める．ここから！！！！！！！！！！！！！！！！！！！！！ そのまま真の距離引いたら0になるからここでの真の距離は時刻を使う．時刻の精度以下に埋もれる部分が整数不定性として出てくる？伝搬時間も必要やん．
-      l1_bias_.at(i) = true_values_.L1_carrier_phase.at(observed_gnss_index).second; // これじゃダメ．あまり分のNを求めないと．あんま関係ない気がするので後で対応する．
-      // FIXME: 多分coreに入っている部分で整数不定性をwhite noiseとかで初期化して，それが固定値バイアスとしてずっと入るような仕様にしないとダメな気がする．
-      // これがどのchに対応しているかはわかっている．
-      l2_bias_.at(i) = true_values_.L2_carrier_phase.at(observed_gnss_index).second;
+      l1_bias_.at(i) = observed_values_.L1_carrier_phase.at(observed_gnss_index).second;
+      l2_bias_.at(i) = observed_values_.L2_carrier_phase.at(observed_gnss_index).second;
     }
     if (info_.now_observed_status.at(i)) ++observed_gnss_index;
   }
 
-  for (int i = 0; i < true_values_.observable_gnss_sat_id.size(); ++i)
+  for (int index = 0; index < info_.now_observed_gnss_sat_id.size(); index++)
   {
-    int gnss_sat_id = true_values_.observable_gnss_sat_id.at(i);
+    int gnss_sat_id = info_.now_observed_gnss_sat_id.at(index);
 
-    auto L1_observed = true_values_.L1_carrier_phase.at(i);
-    L1_observed.first += L1_observed.second - l1_bias_.at(gnss_sat_id);
+    auto L1_observed = observed_values_.L1_carrier_phase.at(index);
+    L1_observed.first += L1_observed.second - l1_bias_.at(gnss_sat_id); // 観測量には追尾分の波長変化も含める．
+    observed_values_.L1_carrier_phase.at(index).first = L1_observed.first; // 位相観測量として更新
 
-    auto L2_observed = true_values_.L2_carrier_phase.at(i);
-    L2_observed.first += L2_observed.second - l2_bias_.at(gnss_sat_id);
+    auto L2_observed = observed_values_.L2_carrier_phase.at(index);
+    L2_observed.first += L2_observed.second - l2_bias_.at(gnss_sat_id); // 観測量には追尾分の波長変化も含める．
+    observed_values_.L2_carrier_phase.at(index).first = L2_observed.first; // 位相観測量として更新
 
-    double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * L1_observed.first - L2_lambda * L2_observed.first) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-    true_values_.ionfree_carrier_phase.push_back(ionfree_phase);
+    // double ionfree_phase = L2_lambda * (L1_frequency / L2_frequency * (L1_observed.first + l1_carrier_phase.second) - (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
   }
-
-  for (int i = 0; i < observed_values_.observable_gnss_sat_id.size(); ++i)
-  {
-    int gnss_sat_id = observed_values_.observable_gnss_sat_id.at(i);
-
-    auto L1_observed = observed_values_.L1_carrier_phase.at(i);
-    L1_observed.first += L1_observed.second - l1_bias_.at(gnss_sat_id);
-
-    auto L2_observed = observed_values_.L2_carrier_phase.at(i);
-    L2_observed.first += L2_observed.second - l2_bias_.at(gnss_sat_id);
-
-    double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * L1_observed.first - L2_lambda * L2_observed.first) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-    observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
-  }
-  return;
 }
 
-// この関数は外部で呼ばれて，内部が変更される．．．
+bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
+{
+  // ここには姿勢の要素も入れなければいけない．
+  double angle_rad = angle(satellite_position, gnss_position - satellite_position);
+  if (angle_rad < M_PI / 2.0 - mask_angle) return true;
+  else return false;
+}
+
+// この関数は外部で呼ばれて，内部が変更される
 void PBD_GnssObservation::UpdateInfoAfterObserved()
 {
   // update observation state info
@@ -208,7 +182,7 @@ void PBD_GnssObservation::ClearPreValues(GnssObservedValues& values)
   values.ionfree_pseudo_range.clear();
 };
 
-double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock)
+double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock) const
 {
   double range = 0.0;
   // 推定するときはここにアライメント誤差の推定量も混ぜる．
@@ -217,36 +191,57 @@ double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_posi
 
   // clock offsetの分を追加
   range += sat_clock - gnss_clock; // 電離層はフリーにしている．
-  // 観測ノイズ
-  std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
-  range += pseudo_range_noise(mt);
+
   return range;
 }
 
-double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda)
+double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda) const
 {
   double range = 0.0;
   libra::Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
   range = CalculateGeometricRange(receive_position, gnss_position);
 
   range += sat_clock - gnss_clock;
-  range += lambda * integer_bias;
-  // range += integer_bias;
-  // 観測ノイズ
-  std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
-  range += carrier_phase_noise(mt);
+  range += lambda * integer_bias; // ここも電離圏は入れてない．
 
-  return range;
+  return range; // 位相観測量に変換（単位は[m]）
 }
 
-// ここは重心位置で良い．
-double PBD_GnssObservation::CalculateGeometricRange(const libra::Vector<3> sat_position, libra::Vector<3> gnss_position) const
+double PBD_GnssObservation::CalculateGeometricRange(const libra::Vector<3> rec_position, libra::Vector<3> gnss_position) const
 {
   double range = 0.0;
   for (int i = 0; i < 3; ++i) {
-    range += pow(sat_position[i] - gnss_position[i], 2.0);
+    range += pow(rec_position[i] - gnss_position[i], 2.0);
   }
   range = sqrt(range);
 
   return range;
+}
+
+// 内容はほぼGnssSatelliteからのコピー
+double PBD_GnssObservation::CalculateIonDelay(const int gnss_id, const libra::Vector<3> rec_position, const double frequency) const
+{
+  // gnss_id is wrong or not validate
+  if (gnss_id >= num_of_gnss_satellites_) return 0.0;
+
+  const double Earth_hemisphere = 6378.1;  //[km]
+
+  double altitude = 0.0;
+  for (int i = 0; i < 3; ++i) altitude += pow(rec_position[i], 2.0);
+  altitude = sqrt(altitude);
+  altitude = altitude / 1000.0 - Earth_hemisphere;  //[m -> km]
+  if (altitude >= 1000.0) return 0.0;               // there is no Ionosphere above 1000km
+
+  libra::Vector<3> gnss_position;
+  gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_id);
+
+  double angle_rad = angle(rec_position, gnss_position - rec_position);
+  const double default_delay = 20.0;                                             //[m] default delay
+  double delay = default_delay * (1000.0 - altitude) / 1000.0 / cos(angle_rad);  // set the maximum height as 1000.0. Divide by
+                                                                                 // cos because the slope makes it longer.
+  const double default_frequency = 1500.0;                                       //[MHz]
+  // Ionospheric delay is inversely proportional to the square of the frequency
+  delay *= pow(default_frequency / frequency, 2.0);
+
+  return delay;
 }
