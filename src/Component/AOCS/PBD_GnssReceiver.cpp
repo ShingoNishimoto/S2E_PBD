@@ -6,12 +6,16 @@
 
 PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
                const AntennaModel antenna_model, const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
-               const Vector<3> noise_std, const Vector<3> alignment_err_std, const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
+               const Vector<3> noise_std, const Vector<3> alignment_err_std,
+               libra::Vector<3> pco, std::vector<double> pcv,
+               const double azi_increment, const double ele_increment,
+               const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
                GNSSReceiver(prescaler, clock_gen, id, gnss_id, ch_max, antenna_model, ant_pos_b, q_b2c, half_width,
                             noise_std, dynamics, gnss_satellites, simtime),
                nrs_antenna_b_x_(0.0, alignment_err_std[0], g_rand.MakeSeed()),
                nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
-               nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed())
+               nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
+               pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
 {
 #ifdef FIXED_ALIGNMENT
 // stdではなくて，固定誤差として与えてあげる．

@@ -148,6 +148,7 @@ set(SOURCE_FILES
   src/Interface/InitInput/InitComponent/InitRFSystemTransmitter.cpp
   src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
   src/Library/VectorTool.hpp
+  src/Library/PhaseCenterCorrection.cpp
 )
 
 # Create executable file
