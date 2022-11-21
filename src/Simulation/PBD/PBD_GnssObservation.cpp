@@ -73,7 +73,11 @@ void PBD_GnssObservation::UpdateGnssObservation()
     double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, code_position_i, receiver_clock_bias_, L2_frequency);
 
     libra::Vector<3> phase_position_i = receiver_->GetPhaseReceivePositionTrueECI();
-    // この中に整数不定性を入れてないのがダメなのでは？
+    // PCCを追加
+    const int gnss_ch = info_.now_observed_gnss_sat_id.size() - 1; // これは正しい？
+    const double azimuth_deg = GetGnssAzimuthDeg(gnss_ch);
+    const double elevation_deg = GetGnssElevationDeg(gnss_ch);
+    phase_position_i += receiver_->GetPCC(azimuth_deg, elevation_deg);
 
     auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L1_frequency);
     auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L2_frequency);
@@ -204,6 +208,8 @@ double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_pos
 
   range += sat_clock - gnss_clock;
   range += lambda * integer_bias; // ここも電離圏は入れてない．
+
+  // 今後，ここにもPCCモデルを追加必要．
 
   return range; // 位相観測量に変換（単位は[m]）
 }
