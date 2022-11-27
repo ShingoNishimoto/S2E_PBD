@@ -1300,25 +1300,26 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
   std::vector<int> now_gnss_sat_ids = observe_info_.now_observed_gnss_sat_id;
   std::vector<int> pre_gnss_sat_ids = observe_info_.pre_observed_gnss_sat_id;
 
-  // i = gnss_sat_id
-  for (int i = 0; i < num_of_gnss_satellites_; ++i)
+  for (int i = 0; i < now_gnss_sat_ids.size(); ++i)
   {
-    if (observe_info_.pre_observed_status.at(i) == false && observe_info_.now_observed_status.at(i) == false) continue;
+    const int gnss_sat_id = now_gnss_sat_ids.at(i);
+    if (observe_info_.pre_observed_status.at(gnss_sat_id) == false && observe_info_.now_observed_status.at(gnss_sat_id) == false) continue; // もはやここは必要ない．
     // 見えなくなったとき
-    else if (observe_info_.pre_observed_status.at(i) == true && observe_info_.now_observed_status.at(i) == false)
+    else if (observe_info_.pre_observed_status.at(gnss_sat_id) == true && observe_info_.now_observed_status.at(gnss_sat_id) == false) // これもいらない．
     {
       // 何もせず飛ばす．
-      if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, i)) abort();
+      if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id)) abort();
       ++pre_index;
     }
-    else if (observe_info_.pre_observed_status.at(i) == false && observe_info_.now_observed_status.at(i) == true)
+    // else if (observe_info_.pre_observed_status.at(gnss_sat_id) == false && observe_info_.now_observed_status.at(gnss_sat_id) == true)
+    else if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) == pre_gnss_sat_ids.end() && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     {
-      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, i)) abort();
+      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, gnss_sat_id)) abort();
       // std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
       Eigen::Vector3d x_est_rec = ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics);
       // 擬似距離観測量をそのまま使うバージョン
-      double ionosphere_delay = gnss_observation.CalculateIonDelay(i, ConvEigenVecToLibraVec(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
+      double ionosphere_delay = gnss_observation.CalculateIonDelay(gnss_sat_id, ConvEigenVecToLibraVec(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
       double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
       x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
 
@@ -1326,7 +1327,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
       // x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - pseudo_range_model) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
 
-      sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(i);
+      sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id);
       int offset = NUM_SINGLE_STATE + now_index;
 
       // 行と列に関してもリセット
@@ -1335,13 +1336,15 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       ++now_index;
     }
     // 引き継ぐ
-    else if (observe_info_.pre_observed_status.at(i) == true && observe_info_.now_observed_status.at(i) == true)
+    // else if (observe_info_.pre_observed_status.at(gnss_sat_id) == true && observe_info_.now_observed_status.at(gnss_sat_id) == true)
+    else if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) != pre_gnss_sat_ids.end() && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     {
-      if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, i)) abort();
-      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, i)) abort();
+      // if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id)) abort();
+      pre_index = conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id);
+      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, gnss_sat_id)) abort();
 
       x_est.ambiguity.N.at(now_index) = pre_estimated_bias.at(pre_index);
-      sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(i); // 真値をとってくる．
+      sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id); // 真値をとってくる．
 
       // 整数不定性以外との相関は引き継ぐ．
       P.block(0, NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE, 1) = pre_P.block(0, NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE, 1);
@@ -1362,7 +1365,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // 対角成分の引継ぎ
       P(NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE + now_index) = pre_P(NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE + pre_index);
       Q(NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE + now_index) = pre_Q(NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE + pre_index);
-      ++pre_index; ++now_index;
+      ++now_index;
     }
 
     if (now_index >= NUM_GNSS_CH || pre_index >= NUM_GNSS_CH) break; // ch以上の受信は出来ない

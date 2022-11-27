@@ -38,6 +38,7 @@ public:
   // Alinment Error
   inline const Vector<3> GetAlignmentError(void) const { return alignment_err_b_; }
   inline const Vector<3> GetPCC(const double azimuth_deg, const double elevation_deg) { return pcc_.GetPCC(azimuth_deg, elevation_deg); }
+  inline const vector<GnssInfo> GetGnssInfoVec(void) { return vec_gnssinfo_; } // 継承先では無理．
 
   std::string GetLogHeader() const;
   std::string GetLogValue() const;
@@ -60,4 +61,5 @@ protected:
 
   void UpdatePosition(void);
   void UpdateReceivePosition(Quaternion q_i2b);
+  void CheckAntennaCone(const Vector<3> pos_true_eci_, Quaternion q_i2b);
 };

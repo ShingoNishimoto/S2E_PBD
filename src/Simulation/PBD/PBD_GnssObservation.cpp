@@ -19,9 +19,8 @@ bool GnssObservedValues::check_normal()
 PBD_GnssObservation::PBD_GnssObservation(PBD_GNSSReceiver* gnss_receiver, const GnssSatellites& gnss_satellites) : receiver_(gnss_receiver), gnss_satellites_(gnss_satellites)
 {
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites();
-  std::vector<double> zeros(num_of_gnss_satellites_, 0.0);
-  l1_bias_ = zeros;
-  l2_bias_ = zeros;
+  l1_bias_.assign(num_of_gnss_satellites_, 0.0);
+  l2_bias_.assign(num_of_gnss_satellites_, 0.0);
   info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
@@ -53,19 +52,17 @@ void PBD_GnssObservation::UpdateGnssObservation()
   ClearPreValues(true_values_);
   ClearPreValues(observed_values_);
 
-  for (int gnss_sat_id = 0; gnss_sat_id < num_of_gnss_satellites_; ++gnss_sat_id) {
-    //if(gnss_sat_id == 7 || gnss_sat_id == 23 || gnss_sat_id == 31) continue; 　←この衛星たちの軌道情報が悪いからこうしていたのか？
-    if (!gnss_satellites_.GetWhetherValid(gnss_sat_id)) continue;
-    libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
-    bool see_flag = CheckCanSeeSatellite(antenna_position_i, gnss_position);
+  const std::vector<GnssInfo> vec_gnss_info = receiver_->GetGnssInfoVec();
 
-    if (!see_flag)
-    {
-      continue;
-    }
+  // 受信機で受信できた衛星だけにアクセス．
+  for (int ch = 0; ch < vec_gnss_info.size(); ch++)
+  {
+    const int gnss_sat_id = gnss_satellites_.GetIndexFromID(vec_gnss_info.at(ch).ID); // idとindexの定義を混同しないように整理する．
+
     info_.now_observed_status.at(gnss_sat_id) = true;
     info_.now_observed_gnss_sat_id.push_back(gnss_sat_id);
 
+    libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
 
     libra::Vector<3> code_position_i = receiver_->GetCodeReceivePositionTrueECI();
@@ -74,9 +71,8 @@ void PBD_GnssObservation::UpdateGnssObservation()
 
     libra::Vector<3> phase_position_i = receiver_->GetPhaseReceivePositionTrueECI();
     // PCCを追加
-    const int gnss_ch = info_.now_observed_gnss_sat_id.size() - 1; // これは正しい？
-    const double azimuth_deg = GetGnssAzimuthDeg(gnss_ch);
-    const double elevation_deg = GetGnssElevationDeg(gnss_ch);
+    const double azimuth_deg = GetGnssAzimuthDeg(ch);
+    const double elevation_deg = GetGnssElevationDeg(ch);
     phase_position_i += receiver_->GetPCC(azimuth_deg, elevation_deg);
 
     auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L1_frequency);
@@ -119,19 +115,24 @@ void PBD_GnssObservation::ProcessGnssObservations(void)
 {
   // ここの前半の処理はUpdateの方にまとめてもいいかも．
   int observed_gnss_index = 0;
-  for (int i = 0; i < num_of_gnss_satellites_; ++i)
+
+  const std::vector<GnssInfo> vec_gnss_info = receiver_->GetGnssInfoVec();
+  // 受信機で受信できた衛星だけにアクセス．
+  for (int ch = 0; ch < vec_gnss_info.size(); ch++)
   {
-    if (info_.pre_observed_status.at(i) == true && info_.now_observed_status.at(i) == false)
+    const int gnss_sat_id = gnss_satellites_.GetIndexFromID(vec_gnss_info.at(ch).ID); // idとindexの定義を混同しないように整理する．
+
+    if (info_.pre_observed_status.at(gnss_sat_id) == true && info_.now_observed_status.at(gnss_sat_id) == false)
     {
-      l1_bias_.at(i) = 0.0;
-      l2_bias_.at(i) = 0.0;
+      l1_bias_.at(gnss_sat_id) = 0.0;
+      l2_bias_.at(gnss_sat_id) = 0.0;
     }
-    else if (info_.pre_observed_status.at(i) == false && info_.now_observed_status.at(i) == true)
+    else if (info_.pre_observed_status.at(gnss_sat_id) == false && info_.now_observed_status.at(gnss_sat_id) == true)
     {
-      l1_bias_.at(i) = observed_values_.L1_carrier_phase.at(observed_gnss_index).second;
-      l2_bias_.at(i) = observed_values_.L2_carrier_phase.at(observed_gnss_index).second;
+      l1_bias_.at(gnss_sat_id) = observed_values_.L1_carrier_phase.at(observed_gnss_index).second;
+      l2_bias_.at(gnss_sat_id) = observed_values_.L2_carrier_phase.at(observed_gnss_index).second;
     }
-    if (info_.now_observed_status.at(i)) ++observed_gnss_index;
+    if (info_.now_observed_status.at(gnss_sat_id)) ++observed_gnss_index;
   }
 
   for (int index = 0; index < info_.now_observed_gnss_sat_id.size(); index++)
@@ -162,15 +163,15 @@ bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_
 void PBD_GnssObservation::UpdateInfoAfterObserved()
 {
   // update observation state info
-  for (int i = 0; i < num_of_gnss_satellites_; ++i)
-  {
-    // ここの操作はconstなのでできない．これはUpdate関数の初期部分に移行すればいい？
-    info_.pre_observed_status.at(i) = info_.now_observed_status.at(i);
-    info_.now_observed_status.at(i) = false;
-  }
   info_.pre_observed_gnss_sat_id.clear();
-  for (auto x : info_.now_observed_gnss_sat_id) info_.pre_observed_gnss_sat_id.push_back(x);
-
+  for (int index = 0; index < info_.now_observed_gnss_sat_id.size(); index++)
+  {
+    int gnss_sat_id = info_.now_observed_gnss_sat_id.at(index);
+    info_.pre_observed_status.at(gnss_sat_id) = info_.now_observed_status.at(gnss_sat_id);
+    info_.pre_observed_gnss_sat_id.push_back(gnss_sat_id);
+  }
+  info_.now_observed_status.assign(num_of_gnss_satellites_, false);
+  // info_.now_observed_gnss_sat_id.clear(); //クリア
   return;
 }
 
