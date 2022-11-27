@@ -58,8 +58,13 @@ protected:
 
   libra::NormalRand nrs_antenna_b_x_, nrs_antenna_b_y_,
       nrs_antenna_b_z_;  // Random Error for each axis
+  std::vector<bool> pre_observed_status_{};
+  std::vector<bool> now_observed_status_{};
+  std::vector<GnssInfo> vec_stocked_gnss_info_{};
 
   void UpdatePosition(void);
   void UpdateReceivePosition(Quaternion q_i2b);
+  void CheckAntenna(const Vector<3> pos_true_eci_, Quaternion q_i2b);
   void CheckAntennaCone(const Vector<3> pos_true_eci_, Quaternion q_i2b);
+  void SetStockedGnssInfo(Vector<3> ant2gnss_i, Quaternion q_i2b, std::string gnss_id);
 };
