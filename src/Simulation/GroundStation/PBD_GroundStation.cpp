@@ -22,8 +22,8 @@ void PBD_GroundStation::LogSetup(Logger& logger)
   components_->CompoLogSetUp(logger);
 }
 
-void PBD_GroundStation::Update(const Dynamics& dynamics, const GlobalEnvironment& global_env, const ANT& sc_ant, const PBD_GroundStation& PBD_gs)
+void PBD_GroundStation::Update(const Spacecraft& spacecraft, const GlobalEnvironment& global_env, const Antenna& sc_ant, const PBD_GroundStation& PBD_gs)
 {
-  GroundStation::Update(global_env.GetCelesInfo().GetEarthRotation());
-  components_->gscalculator_->Update(dynamics, sc_ant, PBD_gs, *(components_->ant_));  // compo->ant_がnullの場合未定義動作になる気がするので対処が必要？
+  GroundStation::Update(global_env.GetCelesInfo().GetEarthRotation(), spacecraft);
+  components_->gscalculator_->Update(spacecraft, sc_ant, PBD_gs, *(components_->ant_));  // compo->ant_がnullの場合未定義動作になる気がするので対処が必要？
 }

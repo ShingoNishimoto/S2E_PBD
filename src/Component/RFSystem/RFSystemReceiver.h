@@ -1,7 +1,7 @@
 #pragma once
 #include "../../Simulation/InterSatComm/RFSystem/RFSystemBeam.h"
 #include "../../Simulation/InterSatComm/PBD_InterSatComm.h"
-#include "ANT.h"
+#include "Antenna.hpp"
 #include "Vector.hpp"
 #include "ComponentBase.h"
 #include "ILoggable.h"
@@ -17,7 +17,7 @@ public:
     ClockGenerator* clock_gen,
     const Vector<3>& compo_position_b,
     const Quaternion& q_b2c,
-    ANT* ant,
+    Antenna* ant,
     PBD_InterSatComm* pbd_inter_sat_comm,
     const Dynamics* dynamics,
     const double update_interval_sec);
@@ -39,7 +39,7 @@ private:
 
   //State Values
   double received_power_watt_ = 0.0; //[W]
-  
+
   enum class RFLaserLinkState{
     Lost,
     WaitingForLink,
@@ -55,5 +55,5 @@ private:
   //External Data
   const Dynamics* dynamics_;
   RFSystemBeam* rf_system_beam_;
-  ANT* ant_;
+  Antenna* ant_;
 };

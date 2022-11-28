@@ -1,6 +1,6 @@
 #pragma once
 #include <Interface/InitInput/IniAccess.h>
-#include <Component/CommGS/InitAnt.hpp>
+#include <Component/CommGS/InitAntenna.hpp>
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
 #include "../../Component/AOCS/InitGNSSReceiver.hpp"
