@@ -121,10 +121,6 @@ private:
 
   int num_of_gnss_satellites_;
 
-  // receiver clock biasの真値[m] <- これはログ用にしか使ってないからイランかも
-  const double& receiver_clock_bias_main_;
-  const double& receiver_clock_bias_target_;
-
   std::random_device seed_gen;
   std::mt19937 mt;
 

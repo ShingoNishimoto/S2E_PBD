@@ -23,18 +23,12 @@ PBD_GnssObservation::PBD_GnssObservation(PBD_GNSSReceiver* gnss_receiver, const 
   l2_bias_.assign(num_of_gnss_satellites_, 0.0);
   info_.pre_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
-  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
-  receiver_clock_bias_ = receiver_clock_dist(mt);
 }
 
 PBD_GnssObservation::~PBD_GnssObservation() {}
 
 void PBD_GnssObservation::Update(void)
 {
-  // receiver clock
-  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
-  receiver_clock_bias_ = receiver_clock_dist(mt);
-
   UpdateGnssObservation();
   ProcessGnssObservations();
 }
@@ -62,40 +56,18 @@ void PBD_GnssObservation::UpdateGnssObservation()
     info_.now_observed_status.at(gnss_sat_id) = true;
     info_.now_observed_gnss_sat_id.push_back(gnss_sat_id);
 
+    PBD_GNSSReceiver::GnssReceiverObservations raw_observation = receiver_->GetRawObservations(ch);
+    double l1_pseudo_range = raw_observation.l1_pseudo_range;
+    double l2_pseudo_range = raw_observation.l2_pseudo_range;
+    auto l1_carrier_phase  = raw_observation.l1_carrier_phase;
+    auto l2_carrier_phase  = raw_observation.l2_carrier_phase;
+
+    // true info
     libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
-
-    libra::Vector<3> code_position_i = receiver_->GetCodeReceivePositionTrueECI();
-    double l1_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, code_position_i, receiver_clock_bias_, L1_frequency);
-    double l2_pseudo_range = gnss_satellites_.GetPseudoRangeECI(gnss_sat_id, code_position_i, receiver_clock_bias_, L2_frequency);
-
-    libra::Vector<3> phase_position_i = receiver_->GetPhaseReceivePositionTrueECI();
-    // PCCを追加
-    const double azimuth_deg = GetGnssAzimuthDeg(ch);
-    const double elevation_deg = GetGnssElevationDeg(ch);
-    phase_position_i += receiver_->GetPCC(azimuth_deg, elevation_deg);
-
-    auto l1_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L1_frequency);
-    auto l2_carrier_phase = gnss_satellites_.GetCarrierPhaseECI(gnss_sat_id, phase_position_i, receiver_clock_bias_, L2_frequency);
-
-    // double ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-    // double ionfree_phase = (pow(L1_frequency / L2_frequency, 2.0) * L1_lambda * (l1_carrier_phase.first + l1_carrier_phase.second) - L2_lambda * (l2_carrier_phase.first + l2_carrier_phase.second)) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
-
-    // 観測情報の方には観測誤差を混ぜる
-    std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
-    std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
-
     // estimateに使う方の情報
     gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_sat_id);
     gnss_clock = gnss_satellites_.GetSatelliteClock(gnss_sat_id);
-
-    // add measurement error
-    l1_pseudo_range += pseudo_range_noise(mt);
-    l2_pseudo_range += pseudo_range_noise(mt);
-    l1_carrier_phase.first += carrier_phase_noise(mt) / L1_lambda;
-    l2_carrier_phase.first += carrier_phase_noise(mt) / L2_lambda;
-
-    // ionfree_range = (pow(L1_frequency / L2_frequency, 2.0) * l1_pseudo_range - l2_pseudo_range) / (pow(L1_frequency / L2_frequency, 2.0) - 1);
 
     observed_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
     observed_values_.gnss_satellites_position.push_back(gnss_position);
@@ -105,9 +77,6 @@ void PBD_GnssObservation::UpdateGnssObservation()
     // 一旦真の値を入れる．
     observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
     observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
-
-    // observed_values_.ionfree_pseudo_range.push_back(ionfree_range);
-    // observed_values_.ionfree_carrier_phase.push_back(ionfree_phase);
   }
 }
 

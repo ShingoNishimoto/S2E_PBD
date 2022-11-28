@@ -72,6 +72,7 @@ public:
   inline const int GetPreVisibleGnssNum(void) const {return info_.pre_observed_gnss_sat_id.size();}
   inline const double GetGnssElevationDeg(const int ch) {return receiver_->GetGnssInfo(ch).latitude * libra::rad_to_deg;}
   inline const double GetGnssAzimuthDeg(const int ch) {return receiver_->GetGnssInfo(ch).longitude * libra::rad_to_deg;}
+  inline const PBD_GNSSReceiver* GetReceiver(void) { return receiver_; }
 
   GnssObservedValues true_values_; // trueは要らんかも
   GnssObservedValues observed_values_;
@@ -80,8 +81,7 @@ public:
   std::vector<double> l1_bias_; // 初期捕捉時に確定するバイアス成分（捕捉している間は固定）
   std::vector<double> l2_bias_; // 初期捕捉時に確定するバイアス成分（捕捉している間は固定）
 
-  // receiver clock biasの真値[m]
-  double receiver_clock_bias_;
+  // double receiver_clock_bias_;
   //マスク角 [rad] <- これは衛星ごとに異なることが想定されるのでiniファイルとかで指定すべきでは？
   const double mask_angle = 10.0 / 180.0 * M_PI;
 

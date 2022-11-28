@@ -37,8 +37,19 @@ public:
   // inline const Vector<3> GetCodeReceivePositionECEF(void) const { return code_receive_position_ecef_; }
   // Alinment Error
   inline const Vector<3> GetAlignmentError(void) const { return alignment_err_b_; }
-  inline const Vector<3> GetPCC(const double azimuth_deg, const double elevation_deg) { return pcc_.GetPCC(azimuth_deg, elevation_deg); }
+  inline const double GetPCC(const double azimuth_deg, const double elevation_deg) { return pcc_.GetPCC(azimuth_deg, elevation_deg); }
   inline const vector<GnssInfo> GetGnssInfoVec(void) { return vec_gnssinfo_; } // 継承先では無理．
+  inline const double GetClockBias(void) const { return clock_bias_; }
+
+  typedef struct
+  {
+    double l1_pseudo_range;
+    double l2_pseudo_range;
+    std::pair<double, double> l1_carrier_phase; //[位相, N(整数, dtype = double)]
+    std::pair<double, double> l2_carrier_phase; //[位相, N(整数, dtype = double)]
+  } GnssReceiverObservations;
+
+  GnssReceiverObservations GetRawObservations(const int ch);
 
   std::string GetLogHeader() const;
   std::string GetLogValue() const;
@@ -61,6 +72,9 @@ protected:
   std::vector<bool> pre_observed_status_{};
   std::vector<bool> now_observed_status_{};
   std::vector<GnssInfo> vec_stocked_gnss_info_{};
+  double clock_bias_; // receiver clock biasの真値[m]
+  // std::random_device seed_gen;
+  std::mt19937 mt_;
 
   void UpdatePosition(void);
   void UpdateReceivePosition(Quaternion q_i2b);
