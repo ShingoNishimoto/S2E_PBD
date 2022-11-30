@@ -16,14 +16,10 @@ public:
   // ログ保存機能
   virtual void LogSetup(Logger& logger);
 
-  /*
-  // 初期化
-  virtual void Initialize(SimulationConfig* sim_config, const GlobalEnvironment* glo_env, PBD_InterSatComm* pbd_inter_sat_comm, const int sat_id);
 
-  //ダイナミクスへの力・トルク出力
-  void GenerateTorque_Nm_b();
-  void GenerateForce_N_b();
-  */
+  // FIXME: この辺は直したい．
   PBD_GnssObservation* gnss_observation_;
-  PBD_Components* pbd_components_;
+  PBD_Components* pbd_components_; // これはprivateにすべきかも．
+
+private:
 };

@@ -264,9 +264,9 @@ PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(
   // PCCを追加
   const double azimuth_deg = vec_gnssinfo_.at(ch).longitude * libra::rad_to_deg;
   const double elevation_deg = vec_gnssinfo_.at(ch).latitude * libra::rad_to_deg;
-  const double pcc = pcc_.GetPCC(azimuth_deg, elevation_deg);
-  l1_carrier_phase.first += pcc;
-  l2_carrier_phase.first += pcc; // L2は違うが使用してないので．
+  const double pcc = pcc_.GetPCC_m(azimuth_deg, elevation_deg);
+  l1_carrier_phase.first += pcc / L1_lambda;
+  l2_carrier_phase.first += pcc / L2_lambda; // L2は違うが使用してないので．
 
   // 観測誤差を混ぜる
   std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
@@ -278,7 +278,7 @@ PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(
   l1_carrier_phase.first += carrier_phase_noise(mt_) / L1_lambda;
   l2_carrier_phase.first += carrier_phase_noise(mt_) / L2_lambda;
 
-  PBD_GNSSReceiver::GnssReceiverObservations raw_observation = {l1_pseudo_range, l2_pseudo_range, l1_carrier_phase, l2_carrier_phase};
+  GnssReceiverObservations raw_observation = {l1_pseudo_range, l2_pseudo_range, l1_carrier_phase, l2_carrier_phase};
   return raw_observation;
 }
 

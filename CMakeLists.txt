@@ -138,17 +138,17 @@ set(SOURCE_FILES
   src/Simulation/PBD/PBD_GeoPotential.cpp
   src/Simulation/PBD/PBD_Lambda.cpp
   src/Simulation/PBD/PBD_const.cpp
-  src/Component/CDH/OBC_Sat0.cpp
-  src/Component/CDH/OBC_Sat1.cpp
+  src/Simulation/PBD/PhaseCenterCorrection.cpp
   src/Component/AOCS/PBD_GNSSReceiver.cpp
   src/Component/AOCS/InitGnssReceiver.cpp
+  src/Component/AOCS/RelativePositionSensor.cpp
+  src/Component/AOCS/InitializeRelativePositionSensor.cpp
   src/Component/RFSystem/RFSystemReceiver.cpp
   src/Component/RFSystem/RFSystemTransmitter.cpp
   src/Interface/InitInput/InitComponent/InitRFSystemReceiver.cpp
   src/Interface/InitInput/InitComponent/InitRFSystemTransmitter.cpp
   src/Interface/InitInput/InitInterSatComm/InitRFSystemBeam.cpp
   src/Library/VectorTool.hpp
-  src/Library/PhaseCenterCorrection.cpp
 )
 
 # Create executable file

@@ -28,7 +28,7 @@ const double sigma_r_process = 0.001;    //[m]
 const double sigma_v_process = 5 * 1e-4;   //[m/s]
 const double sigma_acc_r_process = 50*1e2; // 7500;   //[nm/s^2]
 const double sigma_acc_t_process = 80*1e2; // 1000;   //[nm/s^2]
-const double sigma_acc_n_process = 10*1e2; // 500;    //[nm/s^2]
+const double sigma_acc_n_process = 40*1e2; // 500;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
 const double sigma_cdt_process   = 1.0; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 

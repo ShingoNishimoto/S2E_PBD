@@ -1,5 +1,5 @@
-#include "PBD_const.h"
 #include "PBD_GnssObservation.h"
+#include "PBD_const.h"
 
 bool GnssObservedValues::check_normal()
 {
@@ -120,6 +120,15 @@ void PBD_GnssObservation::ProcessGnssObservations(void)
   }
 }
 
+const libra::Vector<3> PBD_GnssObservation::GetGnssDirection(const int ch) const
+{
+  const double azi_rad = receiver_->GetGnssInfo(ch).longitude;
+  const double ele_rad = receiver_->GetGnssInfo(ch).latitude;
+  libra::Vector<3> e(0);
+  e[0] = cos(ele_rad) * cos(azi_rad); e[1] = cos(ele_rad) * sin(azi_rad); e[2] = sin(ele_rad);
+  return e;
+}
+
 bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
 {
   // ここには姿勢の要素も入れなければいけない．
@@ -170,7 +179,8 @@ double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_posi
   return range;
 }
 
-double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda) const
+double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position,
+  const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda, const double pcc) const
 {
   double range = 0.0;
   libra::Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
@@ -178,8 +188,7 @@ double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_pos
 
   range += sat_clock - gnss_clock;
   range += lambda * integer_bias; // ここも電離圏は入れてない．
-
-  // 今後，ここにもPCCモデルを追加必要．
+  range += pcc;
 
   return range; // 位相観測量に変換（単位は[m]）
 }

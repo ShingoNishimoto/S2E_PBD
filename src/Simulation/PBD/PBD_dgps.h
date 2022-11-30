@@ -10,19 +10,22 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
+
 #include "Vector.hpp"
 #include "SimTime.h"
 #include "GnssSatellites.h"
 #include "./Orbit/Orbit.h"
 #include "PBD_GnssObservation.h"
 #include "PBD_GeoPotential.hpp"
+#include "../Spacecraft/PBD_Sat.h"
 #include "PBD_const.h"
 #include <Environment/Global/CelestialRotation.h>
+#include "PhaseCenterCorrection.hpp"
 
 class PBD_dgps
 {
 public:
-  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
   void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
   void OrbitPropagation();
@@ -33,11 +36,6 @@ public:
 
 private:
   PBD_GeoPotential* geo_potential_;
-
-  // main satellite
-  const Dynamics& main_dynamics_;
-  // target satellite
-  const Dynamics& target_dynamics_;
 
   // FIXME:データ構造は要検討．この構造にしていいのか？
   struct Ambiguity
@@ -60,6 +58,9 @@ private:
     Eigen::Vector3d acc_dist; // 外乱による加速度（ログ用）ECI
     Ambiguity ambiguity;
     const double lambda = L1_lambda; // wave length [m]
+
+    // Antenna parameters
+    PhaseCenterCorrection* pcc;
   };
 
   EstimatedVariables x_est_main;
@@ -91,6 +92,7 @@ private:
     const Dynamics& dynamics;
     EstimatedVariables& x_est;
     Eigen::VectorXd true_N;
+    const PBD_Components* components;
   };
   std::vector<SatelliteInfo> sat_info_;
 
@@ -133,7 +135,6 @@ private:
   void AddGeoPotentialDisturbance(const Eigen::Vector3d& position, Eigen::Vector3d& acc_dist) const;
   Eigen::MatrixXd UpdateP(void);
   Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
-  // Eigen::MatrixXd CalculateA(const Eigen::Vector3d& position_main, const Eigen::Vector3d& velocity_main, const Eigen::Vector3d& position_target, const Eigen::Vector3d& velocity_target);
   Eigen::Matrix3d TransRTN2ECI(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
   Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
   void InitializeQ();
@@ -158,5 +159,6 @@ private:
   template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
   int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
   void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H);
+  libra::Vector<3> LsqForDPco(const std::vector<double> sdcp_vec); // 観測残差とかを受け取って推定計算する部分を入れ込める？
 };
 #endif

@@ -2,7 +2,7 @@
 
 #include <Vector.hpp>
 #include <GNSSReceiver.h>
-#include "../../Library/PhaseCenterCorrection.hpp"
+#include "../../Simulation/PBD/PhaseCenterCorrection.hpp"
 
 using libra::Vector;
 
@@ -35,19 +35,21 @@ public:
   inline const Vector<3> GetCodeReceivePositionDesignECI(void) const { return code_receive_position_eci_.design_pos_; }
   const Vector<3> GetCodeReceivePositionDesignECI(const libra::Vector<3> sat_position) const;
   // inline const Vector<3> GetCodeReceivePositionECEF(void) const { return code_receive_position_ecef_; }
-  // Alinment Error
+
+  // Alignment Error
   inline const Vector<3> GetAlignmentError(void) const { return alignment_err_b_; }
-  inline const double GetPCC(const double azimuth_deg, const double elevation_deg) { return pcc_.GetPCC(azimuth_deg, elevation_deg); }
-  inline const vector<GnssInfo> GetGnssInfoVec(void) { return vec_gnssinfo_; } // 継承先では無理．
+  inline const double GetPCC_m(const double azimuth_deg, const double elevation_deg) { return pcc_.GetPCC_m(azimuth_deg, elevation_deg); }
+  inline const libra::Vector<3> GetPCO_mm(void) const { return pcc_.GetPCO_mm(); }
+  inline const vector<GnssInfo> GetGnssInfoVec(void) const { return vec_gnssinfo_; }
   inline const double GetClockBias(void) const { return clock_bias_; }
 
-  typedef struct
+  struct GnssReceiverObservations
   {
     double l1_pseudo_range;
     double l2_pseudo_range;
     std::pair<double, double> l1_carrier_phase; //[位相, N(整数, dtype = double)]
     std::pair<double, double> l2_carrier_phase; //[位相, N(整数, dtype = double)]
-  } GnssReceiverObservations;
+  };
 
   GnssReceiverObservations GetRawObservations(const int ch);
 
