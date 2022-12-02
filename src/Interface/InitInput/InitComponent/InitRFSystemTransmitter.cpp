@@ -16,7 +16,7 @@ RFSystemTransmitter InitRFSystemTransmitter(ClockGenerator* clock_gen, const std
   q_b2c = q_b2c.normalize();
 
   std::string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_transmitter_file");
-  ANT ant_ = ANT(InitANT(2, ant_ini_path));
+  Antenna ant_ = Antenna(InitAntenna(2, ant_ini_path));
 
   RFSystemTransmitter rf_sys_t(
     prescaler,

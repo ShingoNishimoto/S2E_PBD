@@ -37,6 +37,8 @@
 // Nの真値をしっかり実装しないとダメかも．
 // #define TIME_UPDATE_DEBUG
 
+#define PCO
+
 #undef cross
 
 static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
@@ -48,43 +50,51 @@ static const int precision = 10; // position
 static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int size, const int max_size);
 
 // outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const Dynamics& main_dynamics, const Dynamics& target_dynamics, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, PBD_GeoPotential* geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), main_dynamics_(main_dynamics), target_dynamics_(target_dynamics), receiver_clock_bias_main_(main_observation.receiver_clock_bias_), receiver_clock_bias_target_(target_observation.receiver_clock_bias_), gnss_observations_({ main_observation, target_observation }), geo_potential_(geop)
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), geo_potential_(geop)
 {
   //初期化
   x_est_main.position = Eigen::VectorXd::Zero(3);
-  libra::Vector<3> position_main = main_dynamics_.GetPosition_i();
+  const Dynamics& main_dynamics = spacecrafts.at(0)->GetDynamics();
+  libra::Vector<3> position_main = main_dynamics.GetPosition_i();
   for (int i = 0; i < 3; ++i) x_est_main.position(i) = position_main[i];
   x_est_main.clock = Eigen::VectorXd::Zero(1);
-  libra::Vector<3> velocity_main = main_dynamics_.GetOrbit().GetSatVelocity_i();
+  libra::Vector<3> velocity_main = main_dynamics.GetOrbit().GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_main.velocity(i) = velocity_main[i];
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
+  const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
+  x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   x_est_target.position = Eigen::VectorXd::Zero(3);
-  libra::Vector<3> position_target = target_dynamics_.GetPosition_i();
+  const Dynamics& target_dynamics = spacecrafts.at(1)->GetDynamics();
+  libra::Vector<3> position_target = target_dynamics.GetPosition_i();
   for (int i = 0; i < 3; ++i) x_est_target.position(i) = position_target[i];
   x_est_target.clock = Eigen::VectorXd::Zero(1);
-  libra::Vector<3> velocity_target = target_dynamics_.GetOrbit().GetSatVelocity_i();
+  libra::Vector<3> velocity_target = target_dynamics.GetOrbit().GetSatVelocity_i();
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) = velocity_target[i];
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
+  x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   // x_est_.push_back(x_est_main);
   // x_est_.push_back(x_est_target);
   // true_N_main = Eigen::VectorXd::Zero(NUM_GNSS_CH);
   // true_N_target = Eigen::VectorXd::Zero(NUM_GNSS_CH);
-  sat_info_.push_back({main_dynamics, x_est_main, Eigen::VectorXd::Zero(NUM_GNSS_CH)});
-  sat_info_.push_back({target_dynamics, x_est_target, Eigen::VectorXd::Zero(NUM_GNSS_CH)});
+  sat_info_.push_back({main_dynamics, x_est_main, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(0)->pbd_components_});
+  sat_info_.push_back({target_dynamics, x_est_target, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(1)->pbd_components_});
+
+  gnss_observations_.push_back(*(spacecrafts.at(0)->gnss_observation_));
+  gnss_observations_.push_back(*(spacecrafts.at(1)->gnss_observation_));
 
   GnssObserveModel main_model{};
   GnssObserveModel target_model{};
   gnss_observed_models_.push_back(main_model);
   gnss_observed_models_.push_back(target_model);
 
-  antenna_pos_b_.push_back(main_observation.GetAntennaPosition());
-  antenna_pos_b_.push_back(target_observation.GetAntennaPosition());
+  antenna_pos_b_.push_back(gnss_observations_.at(0).GetAntennaPosition());
+  antenna_pos_b_.push_back(gnss_observations_.at(1).GetAntennaPosition());
 
   // STMの初期化
   InitializePhi();
@@ -142,7 +152,6 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 
   common_observed_status.assign(num_of_gnss_satellites_, false);
 
-
   std::ofstream ofs_ini_txt("readme_new.txt");
   ofs_ini_txt << "initial position dist: " << sigma_r_ini << std::endl;
   ofs_ini_txt << "initial velocity dist: " << sigma_v_ini << std::endl;
@@ -165,8 +174,8 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   ofs_ini_txt << "num of status: " << NUM_STATE << std::endl;
   ofs_ini_txt << "observe step time: " << observe_step_time << std::endl;
   ofs_ini_txt << "log step time: " << log_step_time << std::endl;
-  libra::Vector<3> alignment_err_main = main_observation.GetAntennaAlignmentError();
-  libra::Vector<3> alignment_err_target = target_observation.GetAntennaAlignmentError();
+  libra::Vector<3> alignment_err_main = gnss_observations_.at(0).GetAntennaAlignmentError();
+  libra::Vector<3> alignment_err_target = gnss_observations_.at(1).GetAntennaAlignmentError();
   for (uint8_t i = 0; i < 3; i++)
     ofs_ini_txt << "main antenna alignment error[m]: " << alignment_err_main[i] << std::endl;
   for (uint8_t i = 0; i < 3; i++)
@@ -250,18 +259,20 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
 
   //log output
   if(abs(elapsed_time - tmp_log*log_step_time) < step_time/2.0){
-    libra::Vector<3> sat_position_main = main_dynamics_.GetPosition_i();
-    libra::Vector<3> sat_velocity_main = main_dynamics_.GetOrbit().GetSatVelocity_i();
-    libra::Vector<3> sat_position_target = target_dynamics_.GetPosition_i();
-    libra::Vector<3> sat_velocity_target = target_dynamics_.GetOrbit().GetSatVelocity_i();
+    const Dynamics& main_dynamics = sat_info_.at(0).dynamics;
+    libra::Vector<3> sat_position_main = main_dynamics.GetPosition_i();
+    libra::Vector<3> sat_velocity_main = main_dynamics.GetOrbit().GetSatVelocity_i();
+    const Dynamics& target_dynamics = sat_info_.at(1).dynamics;
+    libra::Vector<3> sat_position_target = target_dynamics.GetPosition_i();
+    libra::Vector<3> sat_velocity_target = target_dynamics.GetOrbit().GetSatVelocity_i();
 
     // ECIでの真値（位置，クロックバイアス，速度）を残す．
     for(int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_position_main[i] << ","; // r_m_true
-    ofs << std::fixed << std::setprecision(precision) << receiver_clock_bias_main_ << ","; // t_m_true
+    ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetReceiver()->GetClockBias() << ","; // t_m_true
     for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(precision) << sat_velocity_main[i] << ","; // v_m_true
 
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_position_target[i] << ","; // r_t_true
-    ofs << std::fixed << std::setprecision(precision) << receiver_clock_bias_target_ << ","; // t_t_true
+    ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetReceiver()->GetClockBias() << ","; // t_t_true
     for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_velocity_target[i] << ","; // v_t_true
 
     // 推定結果，ECIでの値を残す．
@@ -398,6 +409,12 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssElevationDeg(i) << ","; // elevation target
       else ofs << 0 << ",";
     }
+
+    // PCO
+    const libra::Vector<3> pco_main = x_est_main.pcc->GetPCO_mm();
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_main[i] << ",";
+    const libra::Vector<3> pco_target = x_est_target.pcc->GetPCO_mm();
+    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_target[i] << ",";
 
     ofs << std::endl;
   }
@@ -832,13 +849,13 @@ void PBD_dgps::KalmanFilter()
   Eigen::VectorXd E_pre = z - h_x;
   // まずアンテナ位置に変換
   Eigen::VectorXd x_ant_predict = x_predict;
-  x_ant_predict.topRows(3) = ConvCenterOfMassToReceivePos(x_predict.topRows(3), antenna_pos_b_.at(0), main_dynamics_);
-  x_ant_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvCenterOfMassToReceivePos(x_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), target_dynamics_);
+  x_ant_predict.topRows(3) = ConvCenterOfMassToReceivePos(x_predict.topRows(3), antenna_pos_b_.at(0), sat_info_.at(0).dynamics);
+  x_ant_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvCenterOfMassToReceivePos(x_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), sat_info_.at(1).dynamics);
   Eigen::VectorXd x_update = x_ant_predict + K * E_pre;
   // Eigen::VectorXd x_update = x_predict + K * E_pre;
   // 重心位置に戻す．
-  x_update.topRows(3) = ConvReceivePosToCenterOfMass(x_update.topRows(3), antenna_pos_b_.at(0), main_dynamics_);
-  x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvReceivePosToCenterOfMass(x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), target_dynamics_);
+  x_update.topRows(3) = ConvReceivePosToCenterOfMass(x_update.topRows(3), antenna_pos_b_.at(0), sat_info_.at(0).dynamics);
+  x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvReceivePosToCenterOfMass(x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), sat_info_.at(1).dynamics);
 
  //更新
   x_est_main.position = x_update.topRows(3);
@@ -869,6 +886,16 @@ void PBD_dgps::KalmanFilter()
   P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose();
   // P_ = tmp*P_;
 
+// PCOの推定．
+#ifdef PCO
+  const double res_thresh = 1.0;
+  const double sdcp_res_mean = E_pre.bottomRows(n_common).mean();
+  if (std::fabs(E_pre.bottomRows(n_common).mean()) < res_thresh)
+  {
+    LsqForDPco(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+  }
+#endif // PCO
+
 #ifdef AKF
   // residual
   // GRAPHIC*2 + SDCPにする．
@@ -896,33 +923,6 @@ void PBD_dgps::KalmanFilter()
 #endif // AKF
 
   // TODO: Nについて，収束している？ものは0に落とす．
-
-  // これが必要になる時点で何かバグってそう．
-  // for (int i = 0; i < NUM_GNSS_CH; ++i)
-  // {
-  //   int N_offset;
-  //   if (i < n_main)
-  //   {
-  //     N_offset = NUM_SINGLE_STATE + i;
-  //     if (P_(N_offset, N_offset) < 0) P_(N_offset, N_offset) = pow(sigma_N_ini, 2.0); // sqrt(pow(P_(N_offset, N_offset), 2.0));
-  //   }
-  //   if (i < n_target)
-  //   {
-  //     N_offset = NUM_STATE + n_main + i;
-  //     if (P_(N_offset, N_offset) < 0) P_(N_offset, N_offset) = pow(sigma_N_ini, 2.0); // sqrt(pow(P_(N_offset, N_offset), 2.0));
-  //   }
-  // }
-
-  // others
-  // for (int i = 0; i < NUM_SINGLE_STATE; ++i)
-  // {
-  //   int offset = i;
-  //   if (P_(offset, offset) < 1e-6) P_(offset, offset) = sqrt(pow(P_(offset, offset), 2.0));
-  //   offset = NUM_SINGLE_STATE_ALL + i;
-  //   if (P_(offset, offset) < 1e-6) P_(offset, offset) = sqrt(pow(P_(offset, offset), 2.0));
-  // }
-
-  // TODO: make the Double Differential ambiguity
 
   // IAR
 
@@ -1053,10 +1053,10 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   double carrier_phase_range = carrier_phase.first * x_est.lambda; // [m]で受け取る．
 
   libra::Vector<3> sat_position{ 0.0 };
-  sat_position = ConvEigenVecToLibraVec(x_est.position);
+  sat_position = ConvEigenVecToLibraVec<3>(x_est.position);
   const double sat_clock = x_est.clock(0);
   // ここら辺はGnssObserveModel内に格納する．
-  libra::Vector<3> receive_pos = ConvEigenVecToLibraVec(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
+  libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
   double geometric_range = gnss_observation.CalculateGeometricRange(receive_pos, gnss_position);
   observe_model.geometric_range.push_back(geometric_range);
   if (observe_model.geometric_range.size() != (index + 1)) abort();
@@ -1065,7 +1065,8 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   observe_model.pseudo_range_model.push_back(pseudo_range_model);
   if (observe_model.pseudo_range_model.size() != (index + 1)) abort();
 
-  double carrier_phase_model = gnss_observation.CalculateCarrierPhase(sat_position, gnss_position, sat_clock, gnss_clock, x_est.ambiguity.N.at(index), L1_lambda);
+  const double pcc = x_est.pcc->GetPCC_m(gnss_observation.GetGnssAzimuthDeg(index), gnss_observation.GetGnssElevationDeg(index));
+  double carrier_phase_model = gnss_observation.CalculateCarrierPhase(sat_position, gnss_position, sat_clock, gnss_clock, x_est.ambiguity.N.at(index), L1_lambda, pcc);
   observe_model.carrier_phase_model.push_back(carrier_phase_model);
   if (observe_model.carrier_phase_model.size() != (index + 1)) abort();
 
@@ -1231,7 +1232,7 @@ void PBD_dgps::AllocateToCh(const int gnss_sat_id, std::map<const int, int>& obs
     free_ch.erase(free_ch.begin());
     observing_ch[gnss_sat_id] = ch;
   }
-};
+}
 
 void PBD_dgps::RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch)
 {
@@ -1245,7 +1246,7 @@ void PBD_dgps::RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& obs
   {
     // None
   }
-};
+}
 
 Eigen::Vector3d PBD_dgps::ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics)
 {
@@ -1260,7 +1261,7 @@ Eigen::Vector3d PBD_dgps::ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, 
 Eigen::Vector3d PBD_dgps::ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics)
 {
   Eigen::Vector3d receive_pos;
-  Quaternion q_i2b = main_dynamics_.GetQuaternion_i2b();
+  Quaternion q_i2b = dynamics.GetQuaternion_i2b();
   libra::Vector<3> sat2ant_i = q_i2b.frame_conv_inv(antenna_pos_b);
   for (uint8_t i = 0; i < 3; i++) receive_pos(i) = pos(i) + sat2ant_i[i]; // 補正する．
 
@@ -1318,13 +1319,14 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
       Eigen::Vector3d x_est_rec = ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics);
-      // 擬似距離観測量をそのまま使うバージョン
-      double ionosphere_delay = gnss_observation.CalculateIonDelay(gnss_sat_id, ConvEigenVecToLibraVec(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
-      double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
-      x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
+      double ionosphere_delay = gnss_observation.CalculateIonDelay(gnss_sat_id, ConvEigenVecToLibraVec<3>(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
 
-      // モデルを使うバージョン
-      // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
+      // 擬似距離観測量をそのまま使うバージョン
+        double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
+        x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
+
+      // モデルを使うバージョン (こっちだと絶対精度が悪くなってしまう．初期誤差の影響を受けすぎる感じ．)
+      // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec<3>(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
       // x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - pseudo_range_model) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
 
       sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id);
@@ -1442,4 +1444,69 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
     Q_(i, i) = sqrt(diag_dash(i) / diag(i)) * Q_(i, i);
   }
 #endif
+}
+
+// クラスが肥大化してしまっているので分割したい．<- PccEstimation的なクラスを作ったほうがいいかも
+void PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
+{
+  const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
+  const PBD_GNSSReceiver* main_receiver = main_observation.GetReceiver();
+  const std::vector<GnssInfo> main_vec_gnssinfo = main_receiver->GetGnssInfoVec();
+
+  const RelativePositionSensor* rel_sensor = sat_info_.at(0).components->GetRelativePositionSensor();
+
+  // 精密な相対位置を取得
+  libra::Vector<3> relative_position_rtn = rel_sensor->GetMeasuredTargetPosition_rtn_m();
+  Eigen::Vector3d relative_position_eci = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * ConvLibraVecToEigenVec<3>(relative_position_rtn);
+
+  x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
+
+  double max_latitude = 0;
+  int top_gnss_ch;
+  const int visible_ch_num = common_observed_gnss_sat_id.size();
+  Eigen::VectorXd h_sdcp = Eigen::VectorXd::Zero(visible_ch_num);
+  for (auto gnss_id: common_observed_gnss_sat_id)
+  {
+    const int main_ch = conv_index_from_gnss_sat_id(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
+    const int target_ch = conv_index_from_gnss_sat_id(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
+    // 搬送波位相観測モデルを再計算．FIXME: この辺関数化したい，じゃないと煩雑すぎる．
+    const libra::Vector<3> gnss_position = main_observation.observed_values_.gnss_satellites_position.at(main_ch);
+    const double gnss_clock = main_observation.observed_values_.gnss_clock.at(main_ch);
+
+    const double pcc_main = x_est_main.pcc->GetPCC_m(main_observation.GetGnssAzimuthDeg(main_ch), main_observation.GetGnssElevationDeg(main_ch));
+    const double carrier_phase_main = main_observation.CalculateCarrierPhase(ConvEigenVecToLibraVec<3>(x_est_main.position), gnss_position, x_est_main.clock(0), gnss_clock, x_est_main.ambiguity.N.at(main_ch), L1_lambda, pcc_main);
+
+    const double pcc_target = x_est_target.pcc->GetPCC_m(gnss_observations_.at(1).GetGnssAzimuthDeg(target_ch), gnss_observations_.at(1).GetGnssElevationDeg(target_ch));
+    const double carrier_phase_target = gnss_observations_.at(1).CalculateCarrierPhase(ConvEigenVecToLibraVec<3>(x_est_target.position), gnss_position, x_est_target.clock(0), gnss_clock, x_est_target.ambiguity.N.at(target_ch), L1_lambda, pcc_target);
+
+    h_sdcp(main_ch) = carrier_phase_target - carrier_phase_main;
+
+  // 仰角が最も高いGNSS衛星を探して参照衛星とする．
+    if (main_vec_gnssinfo.at(main_ch).latitude > max_latitude)
+    {
+      max_latitude = main_vec_gnssinfo.at(main_ch).latitude;
+      top_gnss_ch = main_ch;
+    }
+  }
+
+  Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(visible_ch_num - 1);
+  Eigen::MatrixXd H = Eigen::MatrixXd::Zero(visible_ch_num - 1, 3);
+  int ddcp_ch_offset = 0;
+  for (int ch = 0; ch < visible_ch_num - 1; ch++)
+  {
+    if (ch == top_gnss_ch)
+    {
+      ddcp_ch_offset = -1;
+      continue;
+    }
+    const double z_ddcp = sdcp_vec.at(ch) - sdcp_vec.at(top_gnss_ch);
+    const double h_ddcp = h_sdcp(ch) - h_sdcp(top_gnss_ch);
+    res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
+    // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainだけを考える．
+    const libra::Vector<3> h = main_observation.GetGnssDirection(ch) - main_observation.GetGnssDirection(top_gnss_ch);
+    for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = h[i];
+    // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
+  }
+
+  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp);
 }

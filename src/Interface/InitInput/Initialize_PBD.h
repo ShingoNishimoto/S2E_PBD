@@ -1,9 +1,10 @@
 #pragma once
 #include <Interface/InitInput/IniAccess.h>
-#include <Component/CommGS/InitAnt.hpp>
+#include <Component/CommGS/InitAntenna.hpp>
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
 #include "../../Component/AOCS/InitGNSSReceiver.hpp"
+#include "../../Component/AOCS/InitializeRelativePositionSensor.hpp"
 
 // Component
 class RFSystemTransmitter;
@@ -14,7 +15,3 @@ RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const std::stri
 //InterSatComm
 class RFSystemBeam;
 RFSystemBeam InitRFSystemBeam(const std::string ini_path);
-
-// GNSSReceiver
-PBD_GNSSReceiver InitGNSSReceiver(ClockGenerator* clock_gen, int id, const std::string fname,
-  const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime);

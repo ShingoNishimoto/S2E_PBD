@@ -1,24 +1,18 @@
 #pragma once
+
+#include <Simulation/Spacecraft/InstalledComponents.hpp>
+
 #include "Vector.hpp"
 #include "Dynamics.h"
-#include "RelativeInformation.h"
-#include "Structure.h"
-#include "../../Simulation/InterSatComm/PBD_InterSatComm.h"
 #include <GlobalEnvironment.h>
 #include <LocalEnvironment.h>
-#include <Simulation/Spacecraft/InstalledComponents.hpp>
+
+// include for components
 #include <Component/CDH/OBC.h>
-// #include "../../Component/CDH/OBC_Sat0.h"
-// #include "../../Component/CDH/OBC_Sat1.h"
 #include "../../Component/RFSystem/RFSystemTransmitter.h"
 #include "../../Component/RFSystem/RFSystemReceiver.h"
 #include "../../Component/AOCS/PBD_GNSSReceiver.hpp"
-
-class OBC;
-// class OBC_Sat0;
-// class OBC_Sat1;
-class RFSystemTransmitter;
-class RFSystemReceiver;
+#include "../../Component/AOCS/RelativePositionSensor.hpp"
 
 class PBD_Components : public InstalledComponents
 {
@@ -33,13 +27,17 @@ public:
 
   // Getter
   //TODO: Do null-check in the getter (Avoid pointing to another satellite component)
-  inline PBD_GNSSReceiver* GetGNSSReceiver(void) const { return gnss_receiver_; };
+  PBD_GNSSReceiver* GetGNSSReceiver(void) const { return gnss_receiver_; }
+  RelativePositionSensor* GetRelativePositionSensor(void) const { return relative_position_sensor_; }
 
 private:
+  const int sat_id_;
+
   OBC* obc_;
   RFSystemTransmitter* rf_sys_transmitter_;
   RFSystemReceiver* rf_sys_receiver_;
   PBD_GNSSReceiver* gnss_receiver_;
+  RelativePositionSensor* relative_position_sensor_;
 
   // General information
   const SimulationConfig* config_;

@@ -16,7 +16,7 @@ RFSystemReceiver InitRFSystemReceiver(ClockGenerator* clock_gen, const std::stri
   double update_interval_sec = prescaler * sim_time->GetCompoStepSec();
 
   std::string ant_ini_path = conf.ReadString("COMPONENT_FILE", "rf_system_receiver_file");
-  ANT ant_ = ANT(InitANT(1, ant_ini_path));
+  Antenna ant_ = Antenna(InitAntenna(1, ant_ini_path));
 
   RFSystemReceiver rf_sys_r(
     prescaler,

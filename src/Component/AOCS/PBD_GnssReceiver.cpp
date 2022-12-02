@@ -2,6 +2,8 @@
 #include "../../Simulation/Spacecraft/PBD_Components.h"
 #include <Library/math/GlobalRand.h>
 
+#include "../../Simulation/PBD/PBD_const.h" // このやり方は変な気がするので修正したい．
+
 #define FIXED_ALIGNMENT
 
 PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
@@ -32,6 +34,8 @@ PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_ge
   pre_observed_status_.assign(gnss_num, false);
   now_observed_status_.assign(gnss_num, false);
 
+  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
+  clock_bias_ = receiver_clock_dist(mt_);
 }
 
 void PBD_GNSSReceiver::MainRoutine(int count)
@@ -40,6 +44,9 @@ void PBD_GNSSReceiver::MainRoutine(int count)
 
   Vector<3> pos_true_eci_ = dynamics_->GetOrbit().GetSatPosition_i();
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
+
+  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
+  clock_bias_ = receiver_clock_dist(mt_);
 
   CheckAntenna(pos_true_eci_, q_i2b);
 
@@ -238,6 +245,41 @@ const Vector<3> PBD_GNSSReceiver::GetCodeReceivePositionDesignECI(const libra::V
   receive_position_i = sat_position + sat2ant_design_i; // TODO: add pco, pcv
 
   return receive_position_i;
+}
+
+PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(const int ch)
+{
+  const int gnss_sat_id = gnss_satellites_->GetIndexFromID(vec_gnssinfo_.at(ch).ID); // idとindexの定義を混同しないように整理する．
+
+  // 内部でしか使用しないのであればこの辺のgetterは消してしまっていいかもしれない．
+  libra::Vector<3> code_position_i = GetCodeReceivePositionTrueECI();
+  double l1_pseudo_range = gnss_satellites_->GetPseudoRangeECI(gnss_sat_id, code_position_i, clock_bias_, L1_frequency);
+  double l2_pseudo_range = gnss_satellites_->GetPseudoRangeECI(gnss_sat_id, code_position_i, clock_bias_, L2_frequency);
+
+  libra::Vector<3> phase_position_i = GetPhaseReceivePositionTrueECI();
+
+  auto l1_carrier_phase = gnss_satellites_->GetCarrierPhaseECI(gnss_sat_id, phase_position_i, clock_bias_, L1_frequency);
+  auto l2_carrier_phase = gnss_satellites_->GetCarrierPhaseECI(gnss_sat_id, phase_position_i, clock_bias_, L2_frequency);
+
+  // PCCを追加
+  const double azimuth_deg = vec_gnssinfo_.at(ch).longitude * libra::rad_to_deg;
+  const double elevation_deg = vec_gnssinfo_.at(ch).latitude * libra::rad_to_deg;
+  const double pcc = pcc_.GetPCC_m(azimuth_deg, elevation_deg);
+  l1_carrier_phase.first += pcc / L1_lambda;
+  l2_carrier_phase.first += pcc / L2_lambda; // L2は違うが使用してないので．
+
+  // 観測誤差を混ぜる
+  std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
+  std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
+
+  // add measurement error
+  l1_pseudo_range += pseudo_range_noise(mt_);
+  l2_pseudo_range += pseudo_range_noise(mt_);
+  l1_carrier_phase.first += carrier_phase_noise(mt_) / L1_lambda;
+  l2_carrier_phase.first += carrier_phase_noise(mt_) / L2_lambda;
+
+  GnssReceiverObservations raw_observation = {l1_pseudo_range, l2_pseudo_range, l1_carrier_phase, l2_carrier_phase};
+  return raw_observation;
 }
 
 

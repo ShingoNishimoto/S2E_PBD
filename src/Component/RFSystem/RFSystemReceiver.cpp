@@ -7,7 +7,7 @@ RFSystemReceiver::RFSystemReceiver(
   ClockGenerator* clock_gen,
   const Vector<3>& compo_position_b,
   const Quaternion& q_b2c,
-  ANT* ant,
+  Antenna* ant,
   PBD_InterSatComm* pbd_inter_sat_comm,
   const Dynamics* dynamics,
   const double update_interval_sec)

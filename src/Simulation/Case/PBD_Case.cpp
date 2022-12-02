@@ -21,8 +21,6 @@ PBD_Case::~PBD_Case()
 // NOTE: Satellites using RelativeOrbit need to be initialized after the reference satellite initialization.
 void PBD_Case::InitializeSpacecrafts()
 {
-  std::vector<int> relative_orbit_sat_id; // List of satellite IDs that use RelativeOrbit
-
   for (int sat_id = 0; sat_id < sim_config_.num_of_simulated_spacecraft_; sat_id++)
   {
     PBD_Sat* spacecraft = new PBD_Sat(&sim_config_, glo_env_, &rel_info_, pbd_inter_sat_comm_, sat_id);
@@ -40,10 +38,11 @@ void PBD_Case::Initialize()
   {
     spacecraft->LogSetup(*(sim_config_.main_logger_));
   }
+  rel_info_.LogSetup(*(sim_config_.main_logger_));
 
   PBD_GeoPotential* geop = new PBD_GeoPotential(20, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
 
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_.at(0)->GetDynamics(), spacecrafts_.at(1)->GetDynamics(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), geop);
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_, geop);
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
@@ -74,6 +73,9 @@ void PBD_Case::Main()
       spacecraft->Update(&(sim_time));
       // コンポーネントの更新もここでやるのか？MainRoutineがどこで呼ばれているのかが不明．．．
     }
+    // Relative Information
+    rel_info_.Update();
+    // DGPS
     pbd_->Update(sim_time, glo_env_->GetGnssSatellites(), *(spacecrafts_.at(0)->gnss_observation_), *(spacecrafts_.at(1)->gnss_observation_), glo_env_->GetCelesInfo().GetEarthRotation());
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)

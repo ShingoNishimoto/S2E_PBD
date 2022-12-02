@@ -9,7 +9,7 @@ RFSystemTransmitter::RFSystemTransmitter(
   ClockGenerator* clock_gen,
   const Vector<3>& compo_position_b,
   const Quaternion& q_b2c,
-  ANT* ant,
+  Antenna* ant,
   PBD_InterSatComm* pbd_inter_sat_comm,
   const Dynamics* dynamics
 ) : ComponentBase(prescaler, clock_gen),
@@ -78,7 +78,7 @@ void RFSystemTransmitter::ExpandBeam()
 void RFSystemTransmitter::AddNoise()
 {
   // add pointing noise
-  
+
   // add emission power noise
   //double raw_total_power = rf_system_beam_->GetTotalPower();
   //double emission_power_stddev = raw_total_power * emission_power_stddev_ratio_;
