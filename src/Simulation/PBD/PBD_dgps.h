@@ -159,6 +159,6 @@ private:
   template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
   int SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N);
   void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H);
-  libra::Vector<3> LsqForDPco(const std::vector<double> sdcp_vec); // 観測残差とかを受け取って推定計算する部分を入れ込める？
+  void LsqForDPco(const std::vector<double> sdcp_vec); // 観測残差とかを受け取って推定計算する部分を入れ込める？
 };
 #endif

@@ -892,8 +892,7 @@ void PBD_dgps::KalmanFilter()
   const double sdcp_res_mean = E_pre.bottomRows(n_common).mean();
   if (std::fabs(E_pre.bottomRows(n_common).mean()) < res_thresh)
   {
-    const libra::Vector<3> dpco_from_main = LsqForDPco(ConvEigenVecToStdVec(z.bottomRows(n_common)));
-    x_est_target.pcc->SetPCO(x_est_main.pcc->GetPCO_mm() + dpco_from_main);
+    LsqForDPco(ConvEigenVecToStdVec(z.bottomRows(n_common)));
   }
 #endif // PCO
 
@@ -1320,13 +1319,14 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
       Eigen::Vector3d x_est_rec = ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics);
-      // 擬似距離観測量をそのまま使うバージョン
       double ionosphere_delay = gnss_observation.CalculateIonDelay(gnss_sat_id, ConvEigenVecToLibraVec<3>(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
-      double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
-      x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
 
-      // モデルを使うバージョン
-      // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
+      // 擬似距離観測量をそのまま使うバージョン
+        double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
+        x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
+
+      // モデルを使うバージョン (こっちだと絶対精度が悪くなってしまう．初期誤差の影響を受けすぎる感じ．)
+      // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec<3>(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
       // x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - pseudo_range_model) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
 
       sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id);
@@ -1447,7 +1447,7 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
 }
 
 // クラスが肥大化してしまっているので分割したい．<- PccEstimation的なクラスを作ったほうがいいかも
-libra::Vector<3> PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
+void PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
 {
   const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   const PBD_GNSSReceiver* main_receiver = main_observation.GetReceiver();
@@ -1508,10 +1508,5 @@ libra::Vector<3> PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
     // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
   }
 
-  Eigen::Vector3d dpco = -(H.transpose() * H).inverse() * (H.transpose() * res_ddcp); // 3次元
-  libra::Vector<3> dpco_mm;
-  for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
-
-  // 1 epochじゃ無理なのか？
-  return dpco_mm; // mmで返す．
+  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp);
 }

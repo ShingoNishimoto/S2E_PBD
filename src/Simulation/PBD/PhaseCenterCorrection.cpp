@@ -7,6 +7,8 @@
 // #define DISTANCE_BASED_INTERPOLATION
 #define PIECEWISE_FUNCTION
 
+#define LS_EPOCH_NUM (1)
+
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
 azi_increment_(azi_increment), ele_increment_(ele_increment)
 {
@@ -109,4 +111,31 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
   pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv;
   pcc /= 1000; // mに変換
   return pcc;
+}
+
+// template <typename T, size_t N>
+void PhaseCenterCorrection::DpcoInitialEstimation(Eigen::MatrixXd H, Eigen::VectorXd V_Res)
+{
+  static int epoch_count = 0;
+
+  const int current_size = V_Res_dpco_.rows();
+  const int N = V_Res.rows();
+  const int new_size = current_size + N;
+  H_dpco_.conservativeResize(new_size, 3);
+  V_Res_dpco_.conservativeResize(new_size);
+
+  // append new matrix and observations
+  H_dpco_.block(current_size, 0, N, 3) = H;
+  V_Res_dpco_.block(current_size, 0, N, 1) = V_Res;
+  epoch_count++;
+
+  if (epoch_count >= LS_EPOCH_NUM)
+  {
+    Eigen::Vector3d dpco = -(H_dpco_.transpose() * H_dpco_).inverse() * (H_dpco_.transpose() * V_Res_dpco_); // 3次元
+    libra::Vector<3> dpco_mm;
+    for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
+
+    pco_mm_ += dpco_mm;
+    epoch_count = 0;
+  }
 }

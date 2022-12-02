@@ -15,6 +15,9 @@ class PhaseCenterCorrection
   inline void SetPCO(const libra::Vector<3> pco_mm) { pco_mm_ = pco_mm; };
   void PccLogOutput(void);
 
+  // template <typename T, size_t N>
+  void DpcoInitialEstimation(Eigen::MatrixXd H, Eigen::VectorXd V_Res);
+
  protected:
   std::map<int, int> azimuth_index_;   // azimuth角を入力としたindex取得用辞書
   std::map<int, int> elevation_index_; // elevation角を入力としたindex取得用辞書
@@ -22,4 +25,7 @@ class PhaseCenterCorrection
   const double ele_increment_;
   libra::Vector<3> pco_mm_;    // 3次元ベクトル
   std::vector<double> pcv_mm_; // grid pointを保持
+
+  Eigen::VectorXd V_Res_dpco_;
+  Eigen::MatrixXd H_dpco_;
 };
