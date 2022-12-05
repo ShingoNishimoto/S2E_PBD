@@ -23,14 +23,6 @@ inline Eigen::VectorXd ConvLibraVecToEigenVec(libra::Vector<N> libra_vec)
   return eigen_vec;
 }
 
-// inline std::vector<double> ConvEigenVecToStdVec(Eigen::Vector3d eigen_vec)
-// {
-//   std::vector<double> std_vec(3); // 要素数指定
-//   for (uint8_t i = 0; i < 3; i++) std_vec.at(i) = eigen_vec(i);
-
-//   return std_vec;
-// }
-
 inline std::vector<double> ConvEigenVecToStdVec(Eigen::VectorXd eigen_vec)
 {
   const int len = eigen_vec.rows();
@@ -40,14 +32,6 @@ inline std::vector<double> ConvEigenVecToStdVec(Eigen::VectorXd eigen_vec)
   return std_vec;
 }
 
-// inline Eigen::Vector3d ConvStdVecToEigenVec(std::vector<double> std_vec)
-// {
-//   Eigen::Vector3d eigen_vec = Eigen::Vector3d::Zero();
-//   for (uint8_t i = 0; i < 3; i++) eigen_vec(i) = std_vec.at(i);
-
-//   return eigen_vec;
-// }
-
 inline Eigen::VectorXd ConvStdVecToEigenVec(std::vector<double> std_vec)
 {
   const int len = std_vec.size();
@@ -56,5 +40,19 @@ inline Eigen::VectorXd ConvStdVecToEigenVec(std::vector<double> std_vec)
 
   return eigen_vec;
 }
+
+// なぜかconst vectorにするとビルド通らない．
+template <typename T>
+inline const int GetIndexOfStdVector(std::vector<T> target_vector, const T target_value)
+{
+  std::vector<int>::iterator itr = std::find(target_vector.begin(), target_vector.end(), target_value);
+  if (itr == target_vector.end())
+  {
+    std::cout << "not found" << target_value << std::endl;
+    abort();
+  }
+  const int index = std::distance(target_vector.begin(), itr);
+  return index;
+};
 
 #endif __vector_tool_H__

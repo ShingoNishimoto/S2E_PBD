@@ -9,6 +9,7 @@
 
 #define LS_EPOCH_NUM (1)
 
+// PCOは左手系(north, east, up)で定義されている．左手系なのでazimuthは時計まわり．これに合うように要修正！
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
 azi_increment_(azi_increment), ele_increment_(ele_increment)
 {

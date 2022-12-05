@@ -1,7 +1,6 @@
 #include <iomanip>
 #include <set>
 #include "PBD_dgps.h"
-#include "PBD_Lambda.h"
 #include <GeoPotential.h>
 #include "../../Library/VectorTool.hpp"
 
@@ -39,9 +38,10 @@
 
 #define PCO
 
+#define LAMBDA_DEBUG
+
 #undef cross
 
-static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id);
 static const double PBD_DGPS_kConvNm2m = 1e-9;
 static const int precision = 10; // position
 
@@ -823,6 +823,7 @@ void PBD_dgps::KalmanFilter()
   R_ = R_V.asDiagonal();
 // #endif
 
+  // ここにfixしたNの部分が含まれているから不安定になる？
   Eigen::MatrixXd hmh = H * P_ * H.transpose();
 
   Eigen::MatrixXd tmp = R_ + hmh; // (observation_num, observation_num)
@@ -869,11 +870,12 @@ void PBD_dgps::KalmanFilter()
   x_est_main.acceleration = x_update.block(7, 0, 3, 1);
   x_est_target.acceleration = x_update.block(num_main_state_all + 7, 0, 3, 1);
 #endif // REDUCED_DYNAMIC
+
 #ifndef N_DEBUG
   for (int i = 0; i < NUM_GNSS_CH; ++i)
   {
-    if (i < n_main) x_est_main.ambiguity.N.at(i) = x_update(NUM_SINGLE_STATE + i);
-    if (i < n_target) x_est_target.ambiguity.N.at(i) = x_update(num_main_state_all + NUM_SINGLE_STATE + i);
+    if (i < n_main && !x_est_main.ambiguity.is_fixed.at(i)) x_est_main.ambiguity.N.at(i) = x_update(NUM_SINGLE_STATE + i);
+    if (i < n_target && !x_est_target.ambiguity.is_fixed.at(i)) x_est_target.ambiguity.N.at(i) = x_update(num_main_state_all + NUM_SINGLE_STATE + i);
   }
 #else
     // 一旦整数不定性は0とする．
@@ -883,18 +885,18 @@ void PBD_dgps::KalmanFilter()
 
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(num_state_all, num_state_all);
   tmp = (I - K*H);
-  P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose();
+  // ここの2回目で死んでる．
+  P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose(); // ここでNの部分にも入ってくる？
   // P_ = tmp*P_;
 
-// PCOの推定．
-#ifdef PCO
-  const double res_thresh = 1.0;
-  const double sdcp_res_mean = E_pre.bottomRows(n_common).mean();
-  if (std::fabs(E_pre.bottomRows(n_common).mean()) < res_thresh)
+  // fixした部分に入ってきてしまうのでそれを0に落とす．
+  for (int i = 0; i < NUM_GNSS_CH; ++i)
   {
-    LsqForDPco(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+    // ひとまず対角成分だけにする．
+    if (i < n_main && x_est_main.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0.0;
+    if (i < n_target && x_est_target.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i) = 0.0;
   }
-#endif // PCO
+  // 新規で観測したNに対する分散がずっと大きいままになっているのが謎．対応がずれたりしているのか？
 
 #ifdef AKF
   // residual
@@ -925,15 +927,48 @@ void PBD_dgps::KalmanFilter()
   // TODO: Nについて，収束している？ものは0に落とす．
 
   // IAR
-
 #ifdef LAMBDA_DEBUG
-  Eigen::MatrixXd Q_a_main = P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, NUM_GNSS_CH, NUM_GNSS_CH);
-  Eigen::VectorXd a_main = x_est_main.N; // ambiguity
-  // non-zeroに限定する．
-  int num_of_obsetved_gnss =  gnss_observations_.at(0).GetVisibleGnssNum();
-  PBD_Lambda lambda(Q_a_main.topLeftCorner(num_of_obsetved_gnss, num_of_obsetved_gnss), a_main.topRows(num_of_obsetved_gnss), 2);
-  lambda.Solve();
+  Eigen::MatrixXd P_N_main = P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main);
+  Eigen::MatrixXd P_N_target = P_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target);
+  if (P_N_main.maxCoeff() < 1.0 && P_N_target.maxCoeff() < 1.0)
+  {
+    std::vector<Eigen::MatrixXd> vec_P_N;
+    vec_P_N.push_back(P_N_main);
+    vec_P_N.push_back(P_N_target);
+    std::vector<Ambiguity*> vec_N{&(x_est_main.ambiguity), &(x_est_target.ambiguity)};
+    // vec_N.push_back(x_est_main.ambiguity); vec_N.push_back(x_est_target.ambiguity);
+    std::vector<std::vector<int>> observed_gnss_ids{gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_observations_.at(1).info_.now_observed_gnss_sat_id, common_observed_gnss_sat_id}; // ちょっと煩雑やけどまあ．．
+
+    PBD_Lambda lambda(vec_N, vec_P_N, observed_gnss_ids);
+    if (lambda.Solve())
+    {
+      // 残差確認をするなどの後処理が必要．
+      // 解けたらNの分散を落とす．
+      P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
+      P_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
+      // process noiseも同様．
+      Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
+      Q_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
+    }
+  }
+  else
+  {
+    // process noiseだけ元に戻す．ここで毎回戻すと収束しない．
+    // Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(n_main, n_main);
+    // Q_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(n_target, n_target);
+  }
+
 #endif // LAMBDA_DEBUG
+
+// PCOの推定．
+#ifdef PCO
+  const double res_thresh = 1.0;
+  const double sdcp_res_mean = E_pre.bottomRows(n_common).mean();
+  if (std::fabs(E_pre.bottomRows(n_common).mean()) < res_thresh)
+  {
+    EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+  }
+#endif // PCO
 
   if (!std::isfinite(x_est_main.position(0)))
   {
@@ -958,12 +993,8 @@ void PBD_dgps::ClearGnssObserveModels(GnssObserveModel& observed_model)
 
 Eigen::MatrixXd PBD_dgps::CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S)
 {
-  const int n_main = visible_gnss_nums_.at(0);
-  const int n_target = visible_gnss_nums_.at(1);
-  const int n_common = visible_gnss_nums_.at(2);
   Eigen::MatrixXd PHt = P_ * H.transpose();
-  // ResizeS(S, n_main, n_target, n_common); // 固定サイズの時に必要だったもの
-  // ResizeMHt(MHt, n_main, n_target, n_common);
+
 #if CHOLESKY
   Eigen::MatrixXd ST = S.transpose();
   Eigen::LDLT<Eigen::MatrixXd> LDLTOftmpT(ST);
@@ -1012,6 +1043,7 @@ void PBD_dgps::RemoveColumns(Eigen::MatrixXd& matrix, unsigned int begin_col, un
   }
 };
 
+// ここら辺template使って整理したい．
 void PBD_dgps::ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c)
 {
   // ここも後ろから．
@@ -1042,7 +1074,7 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   GnssObserveModel& observe_model = gnss_observed_models_.at(sat_id);
 
   const GnssObserveInfo& observe_info_ = gnss_observation.info_;
-  const int index = conv_index_from_gnss_sat_id(observe_info_.now_observed_gnss_sat_id, gnss_sat_id);
+  const int index = GetIndexOfStdVector<int>(observe_info_.now_observed_gnss_sat_id, gnss_sat_id);
 
   const GnssObservedValues& observed_val_ = gnss_observation.observed_values_;
   auto gnss_position = observed_val_.gnss_satellites_position.at(index);
@@ -1093,13 +1125,13 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
   // std::find for comon index
-  const int common_index = conv_index_from_gnss_sat_id(common_observed_gnss_sat_id, gnss_sat_id);
+  const int common_index = GetIndexOfStdVector<int>(common_observed_gnss_sat_id, gnss_sat_id);
   const int row_offset = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + common_index;
   PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   PBD_GnssObservation& target_observation = gnss_observations_.at(1);
 
-  const int main_index = conv_index_from_gnss_sat_id(main_observation.info_.now_observed_gnss_sat_id, gnss_sat_id);
-  const int target_index = conv_index_from_gnss_sat_id(target_observation.info_.now_observed_gnss_sat_id, gnss_sat_id);
+  const int main_index = GetIndexOfStdVector<int>(main_observation.info_.now_observed_gnss_sat_id, gnss_sat_id);
+  const int target_index = GetIndexOfStdVector<int>(target_observation.info_.now_observed_gnss_sat_id, gnss_sat_id);
   const int col_offset_main = NUM_SINGLE_STATE + main_index;
   const int col_offset_target = NUM_STATE + visible_gnss_nums_.at(0) + target_index;
   const int num_main_state_all = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
@@ -1172,18 +1204,6 @@ void PBD_dgps::UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eige
   }
 }
 
-static const int conv_index_from_gnss_sat_id(std::vector<int> observed_gnss_sat_id, const int gnss_sat_id)
-{
-  std::vector<int>::iterator itr = std::find(observed_gnss_sat_id.begin(), observed_gnss_sat_id.end(), gnss_sat_id);
-  if (itr == observed_gnss_sat_id.end())
-  {
-    std::cout << "not found" << gnss_sat_id << std::endl;
-    abort();
-  }
-  const int index = distance(observed_gnss_sat_id.begin(), itr);
-  return index;
-};
-
 // sat_idはLEO衛星のこと
 void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
 {
@@ -1211,40 +1231,10 @@ void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
         // common_index_dict.at(gnss_sat_id) = common_index; // このindexはほんまに必要なのか？
         ++common_index;
         // pre_common_observing_ch = now_common_observing_ch; // ???
-        //AllocateToCh(gnss_sat_id, now_common_observing_ch, common_free_ch);
         break;
       }
       // pre_common_observing_ch = now_common_observing_ch;
-      // RemoveFromCh(gnss_sat_id, now_common_observing_ch, common_free_ch);
     }
-  }
-}
-
-// 空のcommon freeにアクセスして死んだ．
-void PBD_dgps::AllocateToCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch)
-{
-  if (observing_ch.count(gnss_sat_id))
-  {
-    // 引き続き観測なので更新しない
-  }
-  else {
-    int ch = free_ch.at(0);
-    free_ch.erase(free_ch.begin());
-    observing_ch[gnss_sat_id] = ch;
-  }
-}
-
-void PBD_dgps::RemoveFromCh(const int gnss_sat_id, std::map<const int, int>& observing_ch, std::vector<int>& free_ch)
-{
-  if (observing_ch.count(gnss_sat_id))
-  {
-    int ch = observing_ch[gnss_sat_id];
-    observing_ch.erase(gnss_sat_id);
-    free_ch.push_back(ch);
-  }
-  else
-  {
-    // None
   }
 }
 
@@ -1285,7 +1275,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
   int pre_index = 0;
   int now_index = 0;
 
-  const std::vector<double> pre_estimated_bias = x_est.ambiguity.N;
+  const Ambiguity pre_estimated_ambiguity = x_est.ambiguity;
   const Eigen::MatrixXd pre_P = P;
   const Eigen::MatrixXd pre_Q = Q;
   // reset
@@ -1309,13 +1299,13 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
     else if (observe_info_.pre_observed_status.at(gnss_sat_id) == true && observe_info_.now_observed_status.at(gnss_sat_id) == false) // これもいらない．
     {
       // 何もせず飛ばす．
-      if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id)) abort();
+      if (pre_index != GetIndexOfStdVector<int>(pre_gnss_sat_ids, gnss_sat_id)) abort();
       ++pre_index;
     }
     // else if (observe_info_.pre_observed_status.at(gnss_sat_id) == false && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     else if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) == pre_gnss_sat_ids.end() && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     {
-      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, gnss_sat_id)) abort();
+      if (now_index != GetIndexOfStdVector<int>(now_gnss_sat_ids, gnss_sat_id)) abort();
       // std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
       Eigen::Vector3d x_est_rec = ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics);
@@ -1324,6 +1314,8 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       // 擬似距離観測量をそのまま使うバージョン
         double observed_pseudo_range = gnss_observation.observed_values_.L1_pseudo_range.at(now_index) - ionosphere_delay;
         x_est.ambiguity.N.at(now_index) = (gnss_observation.observed_values_.L1_carrier_phase.at(now_index).first * x_est.lambda - observed_pseudo_range + ionosphere_delay) / x_est.lambda; // biasの初期値は搬送波位相距離と観測搬送波位相の差をとる．
+        x_est.ambiguity.gnss_sat_id.at(now_index) = gnss_sat_id;
+        x_est.ambiguity.is_fixed.at(now_index) = false;
 
       // モデルを使うバージョン (こっちだと絶対精度が悪くなってしまう．初期誤差の影響を受けすぎる感じ．)
       // double pseudo_range_model = gnss_observation.CalculatePseudoRange(ConvEigenVecToLibraVec<3>(x_est_rec), gnss_observation.observed_values_.gnss_satellites_position.at(now_index), x_est.clock(0), gnss_observation.observed_values_.gnss_clock.at(now_index)); // 本来はここに電離圏モデルを入れないとダメだが，フリーにしているので使いまわす．
@@ -1341,11 +1333,15 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
     // else if (observe_info_.pre_observed_status.at(gnss_sat_id) == true && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     else if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) != pre_gnss_sat_ids.end() && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     {
-      // if (pre_index != conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id)) abort();
-      pre_index = conv_index_from_gnss_sat_id(pre_gnss_sat_ids, gnss_sat_id);
-      if (now_index != conv_index_from_gnss_sat_id(now_gnss_sat_ids, gnss_sat_id)) abort();
+      // if (pre_index != GetIndexOfStdVector<int>(pre_gnss_sat_ids, gnss_sat_id)) abort();
+      pre_index = GetIndexOfStdVector<int>(pre_gnss_sat_ids, gnss_sat_id);
+      if (now_index != GetIndexOfStdVector<int>(now_gnss_sat_ids, gnss_sat_id)) abort();
 
-      x_est.ambiguity.N.at(now_index) = pre_estimated_bias.at(pre_index);
+      // ここを見ると一気に代入vができないのでデータ構造変えた方がよさそう．
+      x_est.ambiguity.N.at(now_index) = pre_estimated_ambiguity.N.at(pre_index);
+      x_est.ambiguity.gnss_sat_id.at(now_index) = gnss_sat_id;
+      x_est.ambiguity.is_fixed.at(now_index) = pre_estimated_ambiguity.is_fixed.at(pre_index);
+
       sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id); // 真値をとってくる．
 
       // 整数不定性以外との相関は引き継ぐ．
@@ -1358,7 +1354,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
         if (j == now_index) break; // 今の衛星以上の部分はまだ知らないのでここで終了．
         int other_gnss_sat_id = now_gnss_sat_ids.at(j);
         if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), other_gnss_sat_id) == pre_gnss_sat_ids.end()) continue; // 見えてなかった衛星に対してはスキップ
-        int other_pre_index = conv_index_from_gnss_sat_id(pre_gnss_sat_ids, other_gnss_sat_id);
+        int other_pre_index = GetIndexOfStdVector<int>(pre_gnss_sat_ids, other_gnss_sat_id);
 
         P(NUM_SINGLE_STATE + j, NUM_SINGLE_STATE + now_index) = pre_P(NUM_SINGLE_STATE + other_pre_index, NUM_SINGLE_STATE + pre_index);
         P(NUM_SINGLE_STATE + now_index, NUM_SINGLE_STATE + j) = pre_P(NUM_SINGLE_STATE + pre_index, NUM_SINGLE_STATE + other_pre_index);
@@ -1388,17 +1384,6 @@ template <typename T> bool PBD_dgps::CheckVectorEqual(const std::vector<T>& a, c
     }
 
     return true;
-}
-
-int PBD_dgps::SelectBaseGnssSatellite(Eigen::VectorXd N, Eigen::MatrixXd P_N)
-{
-  Eigen::VectorXd Var_N = P_N.diagonal();
-  std::vector<double> var_N;
-  for (int i = 0; i < Var_N.size(); ++i) var_N.push_back(Var_N(i));
-  int gnss_sat_id;
-  // 使うのはPの対角成分だけでいい．
-  // TODO: 実装する．
-  return gnss_sat_id;
 }
 
 void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
@@ -1446,8 +1431,8 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
 #endif
 }
 
-// クラスが肥大化してしまっているので分割したい．<- PccEstimation的なクラスを作ったほうがいいかも
-void PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
+// クラスが肥大化してしまっているので分割したい．
+void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
 {
   const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   const PBD_GNSSReceiver* main_receiver = main_observation.GetReceiver();
@@ -1467,8 +1452,8 @@ void PBD_dgps::LsqForDPco(const std::vector<double> sdcp_vec)
   Eigen::VectorXd h_sdcp = Eigen::VectorXd::Zero(visible_ch_num);
   for (auto gnss_id: common_observed_gnss_sat_id)
   {
-    const int main_ch = conv_index_from_gnss_sat_id(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
-    const int target_ch = conv_index_from_gnss_sat_id(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
+    const int main_ch = GetIndexOfStdVector<int>(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
+    const int target_ch = GetIndexOfStdVector<int>(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
     // 搬送波位相観測モデルを再計算．FIXME: この辺関数化したい，じゃないと煩雑すぎる．
     const libra::Vector<3> gnss_position = main_observation.observed_values_.gnss_satellites_position.at(main_ch);
     const double gnss_clock = main_observation.observed_values_.gnss_clock.at(main_ch);
