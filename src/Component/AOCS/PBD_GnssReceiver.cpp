@@ -200,7 +200,7 @@ void PBD_GNSSReceiver::UpdateReceivePosition(Quaternion q_i2b)
   // code position
   code_receive_position_eci_ = arp_eci_; // ひとまず一致させる．
   // phase position
-  phase_receive_position_eci_ = arp_eci_; // TODO: PCOを考える．
+  phase_receive_position_eci_ = arp_eci_;
 
   // とりあえずecefは置いておく．
   // Matrix<3, 3> trans_eci2ecef_ = local_env.GetCelesInfo().GetGlobalInfo().GetEarthRotation().GetDCMJ2000toXCXF();
@@ -231,7 +231,7 @@ const Vector<3> PBD_GNSSReceiver::GetPhaseReceivePositionDesignECI(const libra::
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
 
   sat2ant_design_i = q_i2b.frame_conv_inv(antenna_position_b_);
-  receive_position_i = sat_position + sat2ant_design_i; // TODO: add pco, pcv
+  receive_position_i = sat_position + sat2ant_design_i; // 受信点としてはARPで良い．観測量にPCCを付加する．
 
   return receive_position_i;
 }
@@ -242,7 +242,7 @@ const Vector<3> PBD_GNSSReceiver::GetCodeReceivePositionDesignECI(const libra::V
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
 
   sat2ant_design_i = q_i2b.frame_conv_inv(antenna_position_b_);
-  receive_position_i = sat_position + sat2ant_design_i; // TODO: add pco, pcv
+  receive_position_i = sat_position + sat2ant_design_i;
 
   return receive_position_i;
 }
@@ -268,11 +268,9 @@ PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(
   l1_carrier_phase.first += pcc / L1_lambda;
   l2_carrier_phase.first += pcc / L2_lambda; // L2は違うが使用してないので．
 
-  // 観測誤差を混ぜる
+  // add measurement error
   std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
   std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
-
-  // add measurement error
   l1_pseudo_range += pseudo_range_noise(mt_);
   l2_pseudo_range += pseudo_range_noise(mt_);
   l1_carrier_phase.first += carrier_phase_noise(mt_) / L1_lambda;
