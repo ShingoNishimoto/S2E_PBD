@@ -36,7 +36,7 @@
 // Nの真値をしっかり実装しないとダメかも．
 // #define TIME_UPDATE_DEBUG
 
-#define PCO
+// #define PCO
 
 #define LAMBDA_DEBUG
 
@@ -827,24 +827,20 @@ void PBD_dgps::KalmanFilter()
   Eigen::MatrixXd hmh = H * P_ * H.transpose();
 
   Eigen::MatrixXd tmp = R_ + hmh; // (observation_num, observation_num)
-  // 観測量がないところは0にし直すみたいな加工が必要かもしれない．数字の桁数で打ち切りみたいな形にできればいい．
   //カルマンゲイン
   Eigen::MatrixXd K = CalculateK(H, tmp);
 
-  Eigen::VectorXd x_predict = Eigen::VectorXd(num_state_all);
-  x_predict.topRows(3) = x_est_main.position;
-  x_predict.block(3, 0, 1, 1) = x_est_main.clock;
-  x_predict.block(4, 0, 3, 1)  = x_est_main.velocity;
+  Eigen::VectorXd x_predict(num_state_all);
+  x_predict <<  x_est_main.position, x_est_main.clock, x_est_main.velocity,
 #ifdef REDUCED_DYNAMIC
-  x_predict.block(7, 0, 3, 1) = x_est_main.acceleration;
-  x_predict.block(num_main_state_all + 7, 0, 3, 1) = x_est_target.acceleration;
-#endif // REDUCED_DYNAMIC
-  x_predict.block(NUM_SINGLE_STATE, 0, n_main, 1) = Eigen::Map<Eigen::VectorXd>(&x_est_main.ambiguity.N[0], n_main);
-  //x_predict(10) = Cd;
-  x_predict.block(num_main_state_all, 0, 3, 1) = x_est_target.position;
-  x_predict.block(num_main_state_all + 3, 0, 1, 1) = x_est_target.clock;
-  x_predict.block(num_main_state_all + 4, 0, 3, 1) = x_est_target.velocity;
-  x_predict.bottomRows(n_target) = Eigen::Map<Eigen::VectorXd>(&x_est_target.ambiguity.N[0], n_target);
+                x_est_main.acceleration,
+#endif
+                ConvStdVecToEigenVec(x_est_main.ambiguity.N),
+                x_est_target.position, x_est_target.clock, x_est_target.velocity,
+#ifdef REDUCED_DYNAMIC
+                x_est_target.acceleration,
+#endif
+                ConvStdVecToEigenVec(x_est_target.ambiguity.N);
 
   // innovationの記号を何にするかは要検討
   Eigen::VectorXd E_pre = z - h_x;
@@ -858,18 +854,8 @@ void PBD_dgps::KalmanFilter()
   x_update.topRows(3) = ConvReceivePosToCenterOfMass(x_update.topRows(3), antenna_pos_b_.at(0), sat_info_.at(0).dynamics);
   x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvReceivePosToCenterOfMass(x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), sat_info_.at(1).dynamics);
 
- //更新
-  x_est_main.position = x_update.topRows(3);
-  x_est_main.clock = x_update.block(3, 0, 1, 1);
-  x_est_main.velocity = x_update.block(4, 0, 3, 1);
-
-  x_est_target.position = x_update.block(num_main_state_all, 0, 3, 1);
-  x_est_target.clock = x_update.block(num_main_state_all + 3, 0, 1, 1);
-  x_est_target.velocity = x_update.block(num_main_state_all + 4, 0, 3, 1);
-#ifdef REDUCED_DYNAMIC
-  x_est_main.acceleration = x_update.block(7, 0, 3, 1);
-  x_est_target.acceleration = x_update.block(num_main_state_all + 7, 0, 3, 1);
-#endif // REDUCED_DYNAMIC
+  //更新
+  GetStateFromVector(num_main_state_all, x_update); // N以外を代入
 
 #ifndef N_DEBUG
   for (int i = 0; i < NUM_GNSS_CH; ++i)
@@ -885,18 +871,16 @@ void PBD_dgps::KalmanFilter()
 
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(num_state_all, num_state_all);
   tmp = (I - K*H);
-  // ここの2回目で死んでる．
   P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose(); // ここでNの部分にも入ってくる？
   // P_ = tmp*P_;
 
   // fixした部分に入ってきてしまうのでそれを0に落とす．
-  for (int i = 0; i < NUM_GNSS_CH; ++i)
-  {
-    // ひとまず対角成分だけにする．
-    if (i < n_main && x_est_main.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0.0;
-    if (i < n_target && x_est_target.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i) = 0.0;
-  }
-  // 新規で観測したNに対する分散がずっと大きいままになっているのが謎．対応がずれたりしているのか？
+  // for (int i = 0; i < NUM_GNSS_CH; ++i)
+  // {
+  //   // ひとまず対角成分だけにする．<- 対角だけじゃなかったのでその辺が悪さしてそう．
+  //   if (i < n_main && x_est_main.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0.0;
+  //   if (i < n_target && x_est_target.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i) = 0.0;
+  // }
 
 #ifdef AKF
   // residual
@@ -924,8 +908,6 @@ void PBD_dgps::KalmanFilter()
 */
 #endif // AKF
 
-  // TODO: Nについて，収束している？ものは0に落とす．
-
   // IAR
 #ifdef LAMBDA_DEBUG
   Eigen::MatrixXd P_N_main = P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main);
@@ -935,20 +917,58 @@ void PBD_dgps::KalmanFilter()
     std::vector<Eigen::MatrixXd> vec_P_N;
     vec_P_N.push_back(P_N_main);
     vec_P_N.push_back(P_N_target);
+    std::vector<Ambiguity> vec_N_cpy{x_est_main.ambiguity, x_est_target.ambiguity}; // 失敗した時に戻す用
     std::vector<Ambiguity*> vec_N{&(x_est_main.ambiguity), &(x_est_target.ambiguity)};
-    // vec_N.push_back(x_est_main.ambiguity); vec_N.push_back(x_est_target.ambiguity);
     std::vector<std::vector<int>> observed_gnss_ids{gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_observations_.at(1).info_.now_observed_gnss_sat_id, common_observed_gnss_sat_id}; // ちょっと煩雑やけどまあ．．
 
-    PBD_Lambda lambda(vec_N, vec_P_N, observed_gnss_ids);
-    if (lambda.Solve())
+    PBD_Lambda lambda(vec_N, vec_P_N, observed_gnss_ids, NUM_SINGLE_STATE);
+    if (lambda.Solve(METHOD::PAR_ILS))
     {
-      // 残差確認をするなどの後処理が必要．
-      // 解けたらNの分散を落とす．
-      P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
-      P_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
-      // process noiseも同様．
-      Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
-      Q_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
+      // 解けたNをベースに他状態量の更新を実施する．
+      const Eigen::MatrixXd& M2M1 = lambda.M2M1_;
+      Eigen::MatrixXd P_fixed = M2M1 * P_ * M2M1.transpose();
+      Eigen::VectorXd b_hat(NUM_STATE);
+      b_hat << x_update.topRows(NUM_SINGLE_STATE), x_update.block(NUM_SINGLE_STATE + n_main, 0, NUM_SINGLE_STATE, 1);
+      Eigen::VectorXd b_fixed = b_hat - P_fixed.block(0, NUM_STATE, NUM_STATE, n_common - 1) * P_fixed.bottomRightCorner(n_common - 1, n_common - 1).inverse() * (lambda.N_hat_ - lambda.N_);
+      Eigen::VectorXd x_fixed_all(NUM_STATE + n_main + n_target);
+      x_fixed_all << b_fixed.topRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(0)->N), b_fixed.bottomRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(1)->N);
+      // 代入
+      GetStateFromVector(NUM_SINGLE_STATE + n_main, x_fixed_all); // Nはポインタで渡しているので必要なし．
+
+      // 残差確認
+      h_x_post = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
+      // clear
+      for(int i = 0; i < 2; ++i) ClearGnssObserveModels(gnss_observed_models_.at(i));
+      UpdateObservations(z, h_x_post, H, R_V);
+      E_post = z - h_x_post;
+      if ((E_post.bottomRows(n_common).array() > L1_lambda).any()) // SDCPだけを確認する．
+      {
+        std::cout << "false integer!" << std::endl;
+        GetStateFromVector(NUM_SINGLE_STATE + n_main, x_update); // 戻す．
+        x_est_main.ambiguity = vec_N_cpy.at(0); // falseにセットしないとダメそう．
+        x_est_target.ambiguity = vec_N_cpy.at(1);
+      }
+      else
+      {
+        // 解けたらNの分散を落とす．
+        for (int i = 0; i < n_main; i++)
+        {
+          if (!x_est_main.ambiguity.is_fixed.at(i)) continue;
+          // P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0;
+          P_.col(NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(num_state_all, 1);
+          P_.row(NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(1, num_state_all);
+        }
+        for (int i = 0; i < n_target; i++)
+        {
+          if (!x_est_target.ambiguity.is_fixed.at(i)) continue;
+          // P_(num_main_state_all + NUM_SINGLE_STATE + i, num_main_state_all + NUM_SINGLE_STATE + i) = 0;
+          P_.col(num_main_state_all + NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(num_state_all, 1);
+          P_.row(num_main_state_all + NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(1, num_state_all);
+        }
+        // process noiseも同様．
+        // Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
+        // Q_.block(num_main_state_all + NUM_SINGLE_STATE, num_main_state_all + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
+      }
     }
   }
   else
@@ -1124,7 +1144,7 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
 
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
-  // std::find for comon index
+  // std::find for common index
   const int common_index = GetIndexOfStdVector<int>(common_observed_gnss_sat_id, gnss_sat_id);
   const int row_offset = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + common_index;
   PBD_GnssObservation& main_observation = gnss_observations_.at(0);
@@ -1494,4 +1514,19 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
   }
 
   x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp);
+}
+
+void PBD_dgps::GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state)
+{
+  x_est_main.position = x_state.topRows(3);
+  x_est_main.clock = x_state.block(3, 0, 1, 1);
+  x_est_main.velocity = x_state.block(4, 0, 3, 1);
+
+  x_est_target.position = x_state.block(num_main_state_all, 0, 3, 1);
+  x_est_target.clock = x_state.block(num_main_state_all + 3, 0, 1, 1);
+  x_est_target.velocity = x_state.block(num_main_state_all + 4, 0, 3, 1);
+#ifdef REDUCED_DYNAMIC
+  x_est_main.acceleration = x_state.block(7, 0, 3, 1);
+  x_est_target.acceleration = x_state.block(num_main_state_all + 7, 0, 3, 1);
+#endif // REDUCED_DYNAMIC
 }

@@ -159,6 +159,8 @@ private:
   void ResizeS(Eigen::MatrixXd& S, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
   void ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const int observe_gnss_t, const int observe_gnss_c);
   template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
+  void SetStateToVector(const int num_state_all, Eigen::VectorXd& x_state); // 代入用関数．
+  void GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state);
 
 };
 #endif

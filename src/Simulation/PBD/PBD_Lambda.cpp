@@ -9,21 +9,33 @@
 #define NUM_SOL_CANDIDATE (2)
 static const double ratio_threshold = 3.0;
 
-#define LAMBDA_DEBUG
+// #define LAMBDA_DEBUG
 
-PBD_Lambda::PBD_Lambda(vector<Ambiguity*> N_est_vec, vector<Eigen::MatrixXd>& P_N, const vector<vector<int>> observed_gnss_sat_ids): observed_gnss_sat_ids_(observed_gnss_sat_ids), vec_N_(N_est_vec)
+PBD_Lambda::PBD_Lambda(vector<Ambiguity*> N_est_vec, vector<Eigen::MatrixXd>& P_N, const vector<vector<int>> observed_gnss_sat_ids, const int num_single_state): observed_gnss_sat_ids_(observed_gnss_sat_ids), vec_N_(N_est_vec)
 {
-  P_ddN_ = InitializeCovariance(P_N);
+  P_ddN_ = InitializeCovariance(P_N, num_single_state);
+
+// debug ++++++++++++++++++
+  // P_ddN_ = Eigen::Matrix3d::Zero();
+  // P_ddN_ << 6.2900, 5.9780, 0.5440,
+  //           5.9780, 6.2920, 2.3400,
+  //           0.5440, 2.3400, 6.2880;
+  // N_hat_ = Eigen::Vector3d::Zero();
+  // N_hat_ << 5.4500, 3.1000, 2.9700;
+// ++++++++++++++++++++++++
+
   n_ = N_hat_.rows();
   Z_ = Eigen::MatrixXd::Identity(n_, n_);
-  Eigen::LDLT<Eigen::MatrixXd> LDLTOfP_ddN(P_ddN_.transpose());
-  L_ = LDLTOfP_ddN.matrixL();
-  D_ = LDLTOfP_ddN.vectorD(); // ここで負の値が出るのは数値誤差的にありえる．
+  L_ = Eigen::MatrixXd::Zero(n_, n_);
+  D_ = Eigen::VectorXd::Zero(n_);
   z_ = Eigen::MatrixXd::Zero(n_, NUM_SOL_CANDIDATE);
   sq_norm_ = Eigen::VectorXd::Zero(NUM_SOL_CANDIDATE);
+  N_ = N_hat_;
 
 #ifdef LAMBDA_DEBUG
   std::cout << "P_ddN" << P_ddN_ << std::endl;
+  std::cout << "D" << D_ << std::endl;
+  std::cout << "L" << L_ << std::endl;
   std::cout << "N_est" << N_hat_ << std::endl;
 #endif // LAMBDA_DEBUG
   // N_ ?
@@ -32,40 +44,110 @@ PBD_Lambda::PBD_Lambda(vector<Ambiguity*> N_est_vec, vector<Eigen::MatrixXd>& P_
 
 PBD_Lambda::~PBD_Lambda() {}
 
-bool PBD_Lambda::Solve(void)
+bool PBD_Lambda::Solve(METHOD method)
 {
   // 部分的に解けている場合にどうするべきなのかわからん．
   if (std::find(vec_N_.at(0)->is_fixed.begin(), vec_N_.at(0)->is_fixed.end(), false) == vec_N_.at(0)->is_fixed.end() &&
       std::find(vec_N_.at(1)->is_fixed.begin(), vec_N_.at(1)->is_fixed.end(), false) == vec_N_.at(1)->is_fixed.end()) return true; // 全部解けているときは何もしない．
 
-  Reduction();
-  Eigen::VectorXd z_hat = Z_.transpose() * N_hat_;
-  Eigen::MatrixXd P_z_hat = Z_.transpose() * P_ddN_ * Z_; // PARじゃないとつかわない．
-  vector<Eigen::VectorXd> N_candidates = IntegerLeastSquares(NUM_SOL_CANDIDATE, z_hat);
+  // 正定値行列になっているか確認．
+  Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> ES(P_ddN_);
+  Eigen::VectorXd e = ES.eigenvalues();
+  if ((e.array() < 0).any()) return false; // 部分的に解けた行列はここで毎回はじかれてしまう．
 
-  // if (!SuccessRateTest(N_candidates)) return false;
-  if (!DiscriminationTest(N_candidates)) return false;
+  // Eigen::LDLT<Eigen::MatrixXd> LDLTOfP_ddN(P_ddN_);
+  // L_ = LDLTOfP_ddN.matrixL();
+  // D_ = LDLTOfP_ddN.vectorD(); // ここで負の値が出るのは数値誤差的にありえる．
+  RobustCholeskyDecomposition(P_ddN_);
+
+  Reduction();
+
 #ifdef LAMBDA_DEBUG
   std::cout << "D_" << D_ << std::endl;
   std::cout << "Z_" << Z_ << std::endl;
   std::cout << "L_" << L_ << std::endl;
   std::cout << "N_hat_" << N_hat_ << std::endl;
-  std::cout << "N_" << N_ << std::endl;
 #endif // LAMBDA_DEBUG
-  RecoverNoDifference();
 
-  // シンプルにここでtestを入れてない影響で，違った解に収束しそれによって新しい衛星に対して収束していない可能性がある.
+  // ここで整数部と小数部に分解する．
+  Eigen::VectorXi int_parts = N_hat_.cast<int>();
+  Eigen::VectorXd float_parts = N_hat_ - int_parts.cast<double>();
+  Eigen::VectorXd z_hat = Z_.transpose() * float_parts;
+  Eigen::MatrixXd P_z_hat = Z_.transpose() * P_ddN_ * Z_; // PARじゃないとつかわない．
+
+  // if (!(CalculateSuccessRate(D_) > 0.9)) return false;
+
+  int fixed_num;
+  switch (method)
+  {
+  case METHOD::ILS:
+    if (IntegerLeastSquares(z_hat)) fixed_num = n_;
+    else fixed_num = 0;
+    break;
+
+  case METHOD::PAR_ILS:
+    // const double p0 = 0.8; // ちゃんと決める．
+    fixed_num = PartialSearch(z_hat, P_z_hat, 0.8);
+    break;
+
+  default:
+    fixed_num = 0;
+    break;
+  }
+
+  if (!fixed_num)
+  {
+    RecoverNoDifference(fixed_num);
+    return false;
+  }
+
+  // order the arrays according to sq_norm_
+  vector<Eigen::Index> i_sort = Argsort(sq_norm_);
+  vector<Eigen::VectorXd> N_candidates;
+  for (int j = 0; j < NUM_SOL_CANDIDATE; j++)
+  {
+    // 初めに整数部を除いて，Z_.transpose()をかけたので，それを戻す．
+    N_candidates.push_back((Z_.transpose()).inverse() * z_.block(0, i_sort.at(j), n_, 1) + int_parts.cast<double>());
+  }
+
+#ifdef LAMBDA_DEBUG
+  std::cout << "z_" << z_ << std::endl;
+  std::cout << "square_norm" << sq_norm_ << std::endl;
+  std::cout << "N_1" << N_candidates.at(0) << std::endl;
+  std::cout << "N_2" << N_candidates.at(1) << std::endl;
+#endif // LAMBDA_DEBUG
+
+  // if (!DiscriminationTest(N_candidates))
+  // {
+  //   vec_N_.at(0)->is_fixed.assign(vec_N_.at(0)->is_fixed.size(), false);
+  //   vec_N_.at(1)->is_fixed.assign(vec_N_.at(1)->is_fixed.size(), false);
+  //   return false;
+  // }
+
+  N_ = N_candidates.at(0);
+  RecoverNoDifference(fixed_num);
+
   return true;
 }
 
 // 参照衛星の選択 -> 二重差分の計算部分を実装する．
-Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N)
+Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, const int num_single_state)
 {
-  // まず，ΔNに対応するPを計算する．その中で最も誤差が小さいものを参照衛星とする（ただ今の状況だとどれもほぼ同じ値になってそう．．）．
+  // 変数準備
+  const int num_double_state = 2 * num_single_state;
+  const int n_main = observed_gnss_sat_ids_.at(0).size();
+  const int n_target = observed_gnss_sat_ids_.at(1).size();
   const int n_common = observed_gnss_sat_ids_.at(2).size();
+  const int all_state_num = num_double_state + n_main + n_target;
+  const int sd_state_num = num_double_state + n_common;
+
+  // まず，ΔNに対応するPを計算する．
   Eigen::VectorXd d_N_est = Eigen::VectorXd::Zero(n_common);
-  Eigen::MatrixXd M_sd = Eigen::MatrixXd::Zero(n_common, 2*n_common);
-  Eigen::MatrixXd P_N_all = Eigen::MatrixXd::Zero(2*n_common, 2*n_common); // 一旦受信機間の相関はないと考えてよさそう．
+  Eigen::MatrixXd M_sd = Eigen::MatrixXd::Zero(n_common, n_main + n_target);
+  Eigen::MatrixXd P_N_all = Eigen::MatrixXd::Zero(n_main + n_target, n_main + n_target); // 一旦受信機間の相関はないと考えてよさそう．
+  Eigen::MatrixXd M1 = Eigen::MatrixXd::Zero(sd_state_num, all_state_num); // 中間行列
+  M1.topLeftCorner(num_single_state, num_single_state) = Eigen::MatrixXd::Identity(num_single_state, num_single_state);
+  M1.block(num_single_state, num_single_state + n_main, num_single_state, num_single_state) = Eigen::MatrixXd::Identity(num_single_state, num_single_state);
 
   // ここ，サイズずれるとだるい．
   P_N_all.topLeftCorner(n_common, n_common) = P_N.at(0).topLeftCorner(n_common, n_common);
@@ -78,7 +160,7 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N)
     const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), gnss_id);
     const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), gnss_id);
     d_N_est(ch) = vec_N_.at(1)->N.at(target_ch) - vec_N_.at(0)->N.at(main_ch);
-    M_sd(main_ch, main_ch) = -1.0; M_sd(target_ch, n_common + target_ch) = 1.0;
+    M_sd(ch, main_ch) = -1.0; M_sd(ch, n_common + target_ch) = 1.0;
     if (main_ch >= n_common || target_ch >= n_common)
     {
       // Pの方を入れ替える操作をしないといけない．一旦なさそうなので無視する？
@@ -86,44 +168,94 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N)
     }
   }
   Eigen::MatrixXd P_dN = M_sd * P_N_all * M_sd.transpose();
+  M1.block(num_double_state, num_single_state, n_common, n_main) = M_sd.topLeftCorner(n_common, n_main);
+  M1.block(num_double_state, num_double_state + n_main, n_common, n_target) = M_sd.bottomRightCorner(n_common, n_target);
 
-  // まず最も分散の小さな衛星を選択する．
-  double min_var = 1e5; // 大きめの値．
-  int min_index;
-  for (int i = 0; i < P_dN.rows(); i++)
+  // まず最も分散の小さな衛星を参照衛星とする．
+  // 2回目以降は解けている解をベースに実施していくべき．
+  int ref_index;
+  const int ref_index_candidate = GetIndexOfStdVector(vec_N_.at(0)->is_fixed, true);
+  if (ref_index_candidate >= 0 && ref_index_candidate < vec_N_.at(0)->is_fixed.size())
   {
-    if (P_dN(i, i) < min_var)
+    ref_index = ref_index_candidate;
+  }
+  else
+  {
+    double min_var = 1e5; // 大きめの値．
+    for (int i = 0; i < P_dN.rows(); i++)
     {
-      min_var = P_dN(i, i); min_index =i;
+      if (P_dN(i, i) < min_var)
+      {
+        min_var = P_dN(i, i); ref_index =i;
+      }
     }
   }
-  master_d_N_ = std::make_pair(min_index, std::round(d_N_est(min_index))); // 最初は丸める．
+
+  master_d_N_ = std::make_pair(ref_index, std::round(d_N_est(ref_index))); // 最初は丸める．pull-in領域はこれでいいのか？
+  const int gnss_id = observed_gnss_sat_ids_.at(2).at(ref_index);
+  vec_N_.at(0)->is_fixed.at(GetIndexOfStdVector(vec_N_.at(0)->gnss_sat_id, gnss_id)) = true;
+  vec_N_.at(1)->is_fixed.at(GetIndexOfStdVector(vec_N_.at(1)->gnss_sat_id, gnss_id)) = true;
 
   // その次に二重差分Nと誤差共分散を計算．
+  Eigen::MatrixXd M2 = Eigen::MatrixXd::Zero(sd_state_num - 1, sd_state_num);
+  M2.topLeftCorner(num_double_state, num_double_state) = Eigen::MatrixXd::Identity(num_double_state, num_double_state);
   Eigen::MatrixXd M_dd = Eigen::MatrixXd::Zero(n_common - 1, n_common);
   Eigen::MatrixXd P_ddN = Eigen::MatrixXd::Zero(n_common - 1, n_common - 1);
   int pos = 0;
   for (int i = 0; i < d_N_est.rows(); i++)
   {
-    if (i == min_index) continue;
-    M_dd(pos, pos) = 1.0; M_dd(pos, min_index) = -1.0;
+    if (i == ref_index) continue;
+    M_dd(pos, i) = 1.0; M_dd(pos, ref_index) = -1.0;
+    gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(i)); // 最初の並びを記録．
     pos++;
   }
   N_hat_ = M_dd * d_N_est;
   P_ddN = M_dd * P_dN * M_dd.transpose();
+
+  M2.bottomRightCorner(n_common - 1, n_common) = M_dd;
+  M2M1_ = M2 * M1;
+
+#ifdef LAMBDA_DEBUG
+  std::cout << "P_N0" << P_N.at(0) << std::endl;
+  std::cout << "P_N1" << P_N.at(1) << std::endl;
+  std::cout << "P_dN" << P_dN << std::endl;
+  std::cout << "P_ddN" << P_ddN << std::endl;
+#endif // LAMBDA_DEBUG
+
   return P_ddN;
 }
 
+// LDLt decomposition ここではreorderingは入ってない．
+void PBD_Lambda::RobustCholeskyDecomposition(Eigen::MatrixXd P)
+{
+  const int n = P.rows();
 
-void PBD_Lambda::IntegerGaussTransformation(const int i, const int j)
+  for (int i = n -1; i >= 0; i--)
+  {
+    D_(i) = P(i, i); // どの行を開始点にするかを気を付ければ問題は起こらないはずだが，そもそもこんなことを考えること自体間違っている?
+    // if (D_(i) <= 0)
+    L_.block(i, 0, 1, i + 1) = P.block(i, 0, 1, i + 1).array() / sqrt(P(i, i));
+
+    for (int j = 0; j < i; j++) P.block(j, 0, 1, j + 1) -= L_.block(i, 0, 1, j + 1) * L_(i, j);
+
+    L_.block(i, 0, 1, i + 1) /= L_(i, i);
+  }
+
+  if ((D_.array() < 1e-10).any())
+  {
+    abort();
+  }
+}
+
+void PBD_Lambda::IntegerGaussTransformation(const int i, const int k)
 {
   int mu;
-  mu = (int)round(L_(i, j));
+  mu = (int)round(L_(i, k));
   if (mu != 0)
   {
-    L_.block(i, j, n_ - i, 1) = L_.block(i, j, n_ - i, 1) - mu * L_.block(i, i, n_ - i, 1);
-    Z_.block(0, j, n_, 1) = Z_.block(0, j, n_, 1) - mu * Z_.block(0, i, n_, 1);
-    N_hat_(j) = N_hat_(j) - mu * N_hat_(i);
+    L_.block(i, k, n_ - i, 1) -= (mu * L_.block(i, i, n_ - i, 1).array()).matrix();
+    Z_.col(i) += mu * Z_.col(k);
+    // N_hat_(k) = N_hat_(k) - mu * N_hat_(i);
   }
 
 #ifdef LAMBDA_DEBUG
@@ -145,7 +277,8 @@ void PBD_Lambda::Permute(const int k, const double delta)
   Eigen::Matrix2d temp;
   temp << -L_(k + 1, k), 1,
             ita, lambda;
-  if (k > 0) L_.block(k, 0, 2, k) = temp * L_.block(k, 0, 2, k);
+  // if (k > 0)
+  L_.block(k, 0, 2, k) = temp * L_.block(k, 0, 2, k);
   L_(k + 1, k) = lambda;
 
   // swap
@@ -154,6 +287,8 @@ void PBD_Lambda::Permute(const int k, const double delta)
   L_.block(k + 2, k + 1, n_ - (k + 2), 1) = L_temp;
 
   Z_.col(k).swap(Z_.col(k + 1));
+  // この入れ替えによるgnss_idの対応を記録
+  std::swap(gnss_ids_.at(k), gnss_ids_.at(k+1));
   // N_hat_.row(k).swap(N_hat_.row(k+1));
   // // Pのswapは言及されてないが，ratioテストで必要なので．
   // P_ddN_.row(k).swap(P_ddN_.row(k+1));
@@ -210,28 +345,30 @@ void PBD_Lambda::Reduction(void)
   }
 }
 
-vector<Eigen::VectorXd> PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen::VectorXd z_hat)
+bool PBD_Lambda::IntegerLeastSquares(Eigen::VectorXd z_hat) // const int c_cands
 {
-  assert(z_hat.size() > 0);
+  const int n = z_hat.rows();
+  assert(n > 0);
 
   double chi2 = 1.0 * 10e+18;
-  Eigen::VectorXd dist = Eigen::VectorXd::Zero(n_);
+  Eigen::VectorXd dist = Eigen::VectorXd::Zero(n);
   int search_finished = 0;
   int count = -1; // the number of candidates
 
-  Eigen::VectorXd z_cond = Eigen::VectorXd::Zero(n_);
-  Eigen::VectorXd z_round = Eigen::VectorXd::Zero(n_);
-  Eigen::VectorXi step = Eigen::VectorXi::Zero(n_);
+  z_ = Eigen::MatrixXd::Zero(n, NUM_SOL_CANDIDATE);
+  Eigen::VectorXd z_cond = Eigen::VectorXd::Zero(n);
+  Eigen::VectorXd z_round = Eigen::VectorXd::Zero(n);
+  Eigen::VectorXi step = Eigen::VectorXi::Zero(n);
 
-  z_cond(n_ - 1) = z_hat(n_ - 1);
-  z_round(n_ - 1) = round(z_cond(n_ - 1));
+  z_cond(n - 1) = z_hat(n - 1);
+  z_round(n - 1) = round(z_cond(n - 1));
 
-  double diff = z_cond(n_ - 1) - z_round(n_ - 1);
-  step(n_ - 1) = (diff >= 0) ? 1 : -1;
+  double diff = z_cond(n - 1) - z_round(n - 1);
+  step(n - 1) = (diff >= 0) ? 1 : -1;
 
-  Eigen::MatrixXd S = Eigen::MatrixXd::Zero(n_, n_);
-  int k = n_ - 1;
-  int i_max = n_cands - 1; // Initially, maximum F(z_) is at n_cands
+  Eigen::MatrixXd S = Eigen::MatrixXd::Zero(n, n);
+  int k = n - 1;
+  int i_max = NUM_SOL_CANDIDATE - 1; // Initially, maximum F(z_) is at n_cands
 
   while (!search_finished)
   {
@@ -252,7 +389,7 @@ vector<Eigen::VectorXd> PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen
       else
       {
         // store the found candidate and try next valid integer
-        if (count < n_cands - 2)
+        if (count < NUM_SOL_CANDIDATE - 2)
         {
           count++;
           z_.col(count) = z_round;
@@ -275,7 +412,7 @@ vector<Eigen::VectorXd> PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen
     else
     {
       // exit or move up
-      if (k == n_ - 1) search_finished = 1;
+      if (k == n - 1) search_finished = 1;
       else
       {
         k++;
@@ -286,23 +423,59 @@ vector<Eigen::VectorXd> PBD_Lambda::IntegerLeastSquares(const int n_cands, Eigen
       }
     }
   }
-  // order the arrays according to sq_norm_
-  vector<Eigen::Index> i_sort = Argsort(sq_norm_);
 
-  vector<Eigen::VectorXd> N_candidates_;
-  for (int j = 0; j < NUM_SOL_CANDIDATE; j++)
+  // ここでratio testをやればいいだけだった．ありなしは選べた方がいいかも
+  vector<Eigen::Index> i_sort = Argsort(sq_norm_);
+  if (sq_norm_(i_sort.at(1)) / sq_norm_(i_sort.at(0)) < ratio_threshold)
   {
-    // 初めにZ_.transpose()をかけたので普通のZ_をかける．
-    N_candidates_.push_back(Z_ * z_.block(0, i_sort.at(j), n_, 1));
+    z_ = z_hat; // 実数のまま
+    return false;
   }
+
+  return true;
+}
+
+int PBD_Lambda::PartialSearch(Eigen::VectorXd z_hat, Eigen::MatrixXd P_z, const double p0)
+{
+  double p_s = CalculateSuccessRate(D_);
+
+  int k = 0;
+  while (p_s < p0 && k < n_ - 1)
+  {
+    k++;
+    // compute the bootstrapped success rate if the last n-k+1 ambiguities would be fixed
+    p_s = CalculateSuccessRate(D_.bottomRows(n_ - k));
+  }
+
+  if (p_s < p0) return 0; // 解ける解が存在しない．返り値を考える．
+
+  if (!IntegerLeastSquares(z_hat.bottomRows(n_ - k)))
+  {
+    z_ = z_hat;
+    return 0;
+  }
+
+  Eigen::MatrixXd z_par = z_;
+  Eigen::MatrixXd P_z_par = P_z.bottomRightCorner(n_ - k, n_ - k);
+  // Eigen::MatrixXd Z_par = Z_.block(0, k, n_, n_ - k);
+
+  // first k-1 ambiguities are adjusted based on correlation with the fixed ambiguities
+  Eigen::MatrixXd QP = P_z.block(0, k, k, n_ - k) * P_z_par.inverse();
+  Eigen::MatrixXd z_float = Eigen::MatrixXd::Zero(k, NUM_SOL_CANDIDATE);
+  for (int i = 0; i < NUM_SOL_CANDIDATE; i++)
+  {
+    z_float.col(i) = z_hat.topRows(k) - QP * (z_hat.bottomRows(n_ - k) - z_par.col(i));
+  }
+
+  z_ = Eigen::MatrixXd::Zero(n_, NUM_SOL_CANDIDATE); // 初期化
+  z_.topRows(k) = z_float;
+  z_.bottomRows(n_ - k) = z_par;
 
 #ifdef LAMBDA_DEBUG
   std::cout << "z_" << z_ << std::endl;
-  std::cout << "square_norm" << sq_norm_ << std::endl;
-  std::cout << "N_1" << N_candidates_.at(0) << std::endl;
-  std::cout << "N_2" << N_candidates_.at(1) << std::endl;
 #endif // LAMBDA_DEBUG
-  return N_candidates_; // 確度の高い最初の二つだけは解けてそう．そのほかがバグっている？そもそもこの精度では解けない？
+
+  return n_ - k; // fixed_num
 }
 
 Eigen::Index PBD_Lambda::Argmax(const Eigen::VectorXd& x)
@@ -321,16 +494,16 @@ Eigen::Index PBD_Lambda::Argmin(const Eigen::VectorXd& x)
 
 std::vector<Eigen::Index> PBD_Lambda::Argsort(Eigen::VectorXd x)
 {
-  // 参照渡しじゃないからこれ要らん？
-  Eigen::VectorXd x_cpy = x;
   size_t n = x.size();
   Eigen::Index i_min;
   std::vector<Eigen::Index> indexes;
   while (indexes.size() < n)
   {
-    i_min = Argmin(x_cpy);
+    i_min = Argmin(x);
     indexes.push_back(i_min);
-    RemoveRow(x_cpy, i_min);
+    // RemoveRow(x, i_min);
+    // 良くないけど応急処置として元の場所に大きな値を入れる．
+    x(i_min) = 1e18;
   }
   return indexes;
 }
@@ -348,14 +521,21 @@ void PBD_Lambda::RemoveRow(Eigen::VectorXd& vector, unsigned int row)
   // }
 }
 
-bool PBD_Lambda::SuccessRateTest(vector<Eigen::VectorXd> N_candidates)
+double PBD_Lambda::CalculateSuccessRate(Eigen::VectorXd D)
 {
-  // todo
-  return true;
+  double prob = 1.0;
+  const int n = D.rows();
+  for (int i = 0; i < n; i++)
+  {
+    // prob *= pow(1 - exp(-0.5 * 0.25/D(i)), 0.5);
+    prob *= erf(0.5/sqrt(D(i)) / sqrt(2.0)); // どっちでも変わらんな．
+  }
+
+  return prob;
 }
 
 // ratio testともいう．
-bool PBD_Lambda::DiscriminationTest(vector<Eigen::VectorXd> N_candidates)
+bool PBD_Lambda::DiscriminationTest(vector<Eigen::VectorXd> N_candidates) // これもfixしたものに対してだけ実施すべきなのでは？
 {
   // 1番目と2番目の解を比較する．
   vector<double> ratio;
@@ -368,29 +548,39 @@ bool PBD_Lambda::DiscriminationTest(vector<Eigen::VectorXd> N_candidates)
   return false;
 }
 
-void PBD_Lambda::RecoverNoDifference(void)
+void PBD_Lambda::RecoverNoDifference(const int fixed_num)
 {
-  vector<int> sd_N{master_d_N_.second};
+  vector<double> sd_N{(double)master_d_N_.second};
   for (int i = 0; i < n_; i++)
   {
-    sd_N.push_back(N_(i));
+    sd_N.push_back(N_(i) + master_d_N_.second); // N_はdouble differenceなのでsingle differenceに戻す．
   }
 
-  // originalに置いて精度はまあまあでいいから丸めて差分の不定性が正しければいい？<-真値とはほぼ遠いがいいのか？
-  for (int i = 0; i < observed_gnss_sat_ids_.at(0).size(); i++)
-  {
-    vec_N_.at(0)->N.at(i) = std::round(vec_N_.at(0)->N.at(i));
-    vec_N_.at(0)->is_fixed.at(i) = true;
-  }
+  // まず参照衛星に関して戻す．
+  const int reference_sat_index = master_d_N_.first;
+  const int reference_gnss_id = observed_gnss_sat_ids_.at(2).at(reference_sat_index);
+  const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), reference_gnss_id);
+  const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), reference_gnss_id);
+  vec_N_.at(1)->N.at(target_ch) = sd_N.at(0) + vec_N_.at(0)->N.at(main_ch);
 
-  // この部分は関数かすべきか？
-  for (int ch = 0; ch < observed_gnss_sat_ids_.at(2).size(); ch++)
+  // 次にその他の衛星に関して戻す．
+  for (int i = 1; i < sd_N.size(); i++)
   {
-    const int gnss_id = observed_gnss_sat_ids_.at(2).at(ch);
+    const int gnss_id = gnss_ids_.at(i - 1);
+    const int ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(2), gnss_id);
     const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), gnss_id);
     const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), gnss_id);
-    vec_N_.at(1)->N.at(target_ch) = sd_N.at(ch) + vec_N_.at(0)->N.at(main_ch); // 丸めた値で足す．
-    vec_N_.at(1)->is_fixed.at(target_ch) = true;
+    vec_N_.at(1)->N.at(target_ch) = sd_N.at(ch) + vec_N_.at(0)->N.at(main_ch);
+    if (i <= fixed_num)
+    {
+      vec_N_.at(0)->is_fixed.at(main_ch) = true;
+      vec_N_.at(1)->is_fixed.at(target_ch) = true;
+    }
+    else
+    {
+      vec_N_.at(0)->is_fixed.at(main_ch) = false;
+      vec_N_.at(1)->is_fixed.at(target_ch) = false;
+    }
   }
 }
 
