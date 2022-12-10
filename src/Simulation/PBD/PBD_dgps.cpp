@@ -43,7 +43,7 @@
 #undef cross
 
 static const double PBD_DGPS_kConvNm2m = 1e-9;
-static const int precision = 10; // position
+static const int precision = 15; // position
 
 // template使っていい感じにしたい．
 // template <typename T> static void LogOutput(const )
@@ -506,24 +506,28 @@ void PBD_dgps::OrbitPropagation()
 
 void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::Vector3d& acceleration, Eigen::Vector3d& acc_dist, Eigen::MatrixXd& Phi)
 {
+  AddGeoPotentialDisturbance(position, acc_dist);
+  Eigen::Vector3d acc_dist_cpy = acc_dist;
   Eigen::Vector3d k0 = PositionDifferential(velocity);
   Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration, acc_dist);
   Eigen::Vector3d m0 = -acceleration / tau_a;
   Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n0 = CalculateJacobian(position, velocity); //*Phi;
 
-  Eigen::Vector3d tmp_position = position + k0 * step_time / 2.0;
-  Eigen::Vector3d tmp_velocity = velocity + l0 * step_time / 2.0;
-  Eigen::Vector3d tmp_acceleration = acceleration + m0 * step_time / 2.0;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> tmp_Phi = Phi + n0 * step_time / 2.0;
+  Eigen::Vector3d tmp_position = position + k0 * step_time * 0.5;
+  Eigen::Vector3d tmp_velocity = velocity + l0 * step_time * 0.5;
+  Eigen::Vector3d tmp_acceleration = acceleration + m0 * step_time * 0.5;
+  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> tmp_Phi = Phi + n0 * step_time * 0.5;
+  acc_dist = acc_dist_cpy;
   Eigen::Vector3d k1 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l1 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m1 = -tmp_acceleration / tau_a;
   Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n1 = CalculateJacobian(tmp_position, tmp_velocity); //*tmp_Phi;
 
-  tmp_position = position + k1 * step_time / 2.0;
-  tmp_velocity = velocity + l1 * step_time / 2.0;
-  tmp_acceleration = acceleration + m1 * step_time / 2.0;
-  tmp_Phi = Phi + n1 * step_time / 2.0;
+  tmp_position = position + k1 * step_time * 0.5;
+  tmp_velocity = velocity + l1 * step_time * 0.5;
+  tmp_acceleration = acceleration + m1 * step_time * 0.5;
+  tmp_Phi = Phi + n1 * step_time * 0.5;
+  acc_dist = acc_dist_cpy;
   Eigen::Vector3d k2 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l2 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m2 = -tmp_acceleration / tau_a;
@@ -533,6 +537,7 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   tmp_velocity = velocity + l2 * step_time;
   tmp_acceleration = acceleration + m2 * step_time;
   tmp_Phi = Phi + n2 * step_time;
+  acc_dist = acc_dist_cpy;
   Eigen::Vector3d k3 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m3 = -tmp_acceleration / tau_a;
@@ -574,7 +579,7 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   // for (uint8_t i = 0; i < 3; i++) acc_dist(i) = acc_j2_eci[i];
 
 #ifndef GEOP_DEBUG
-  AddGeoPotentialDisturbance(position, acc_dist);
+  // AddGeoPotentialDisturbance(position, acc_dist); // 一旦コメントアウトする．
 #endif // GEOP_DEBUG
 
 #ifdef AIR_DRAG_ON
