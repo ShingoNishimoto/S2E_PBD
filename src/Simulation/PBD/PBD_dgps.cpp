@@ -447,8 +447,12 @@ static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int s
 void PBD_dgps::InitializePhi(void)
 {
   Phi_ = Eigen::Matrix<double, NUM_STATE, NUM_STATE>::Identity();
+  // clock部分
   Phi_(3, 3) = 0.0;
   Phi_(NUM_SINGLE_STATE + 3, NUM_SINGLE_STATE + 3) = 0.0;
+  // scaling matrixの部分
+  Phi_.block(7, 7, 3, 3) = Eigen::Matrix3d::Zero();
+  Phi_.block(NUM_SINGLE_STATE + 7, NUM_SINGLE_STATE + 7, 3, 3) = Eigen::Matrix3d::Zero();
 }
 
 void PBD_dgps::TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn)
@@ -469,23 +473,25 @@ void PBD_dgps::InitLogTable(void)
 void PBD_dgps::OrbitPropagation()
 {
   // Phiは観測更新間の状態遷移行列．
-  Eigen::MatrixXd Phi_main = Phi_.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
-  Eigen::MatrixXd Phi_target = Phi_.bottomRightCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
+  Eigen::MatrixXd Phi_main = Phi_.topLeftCorner(7, NUM_SINGLE_STATE);
+  Eigen::MatrixXd Phi_target = Phi_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, 7, NUM_SINGLE_STATE);
 
   RK4(x_est_main.position, x_est_main.velocity, x_est_main.acceleration, x_est_main.acc_dist, Phi_main);
-  Phi_.topLeftCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE) = Phi_main;
+  Phi_.topLeftCorner(7, NUM_SINGLE_STATE) = Phi_main;
 
   RK4(x_est_target.position, x_est_target.velocity, x_est_target.acceleration, x_est_target.acc_dist, Phi_target);
-  Phi_.bottomRightCorner(NUM_SINGLE_STATE, NUM_SINGLE_STATE) = Phi_target;
+  Phi_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, 7, NUM_SINGLE_STATE) = Phi_target;
 
 #ifdef REDUCED_DYNAMIC
   // acceleration ここでは q = sigma_acc_process
-  Eigen::MatrixXd Phi_a = CalculatePhi_a(observe_step_time); // ここもチューニングできないと意味ないのでは？
+  Eigen::Matrix3d Phi_a = CalculatePhi_a(observe_step_time);
   double phi = Phi_a(0, 0);
   // double phi_t = Phi_a(1, 1);
   // double phi_n = Phi_a(2, 2);
   // x_est_main.acceleration = Phi_a * x_est_main.acceleration;
   // x_est_target.acceleration = Phi_a * x_est_target.acceleration;
+  Phi_.block(7, 7, 3, 3) = Phi_a;
+  Phi_.block(NUM_SINGLE_STATE + 7, NUM_SINGLE_STATE + 7, 3, 3) = Phi_a;
 
 #endif // REDUCED_DYNAMIC
 
@@ -511,17 +517,25 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   Eigen::Vector3d k0 = PositionDifferential(velocity);
   Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration, acc_dist);
   Eigen::Vector3d m0 = -acceleration / tau_a;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n0 = CalculateJacobian(position, velocity); //*Phi;
+  Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n0 = CalculateJacobian(position, velocity)*Phi;
+  // (a, p)
+#ifdef REDUCED_DYNAMIC
+  Eigen::Matrix3d rtn2eci = TransRTN2ECI(position, velocity);
+  n0.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
+#endif // REDUCED_DYNAMIC
 
   Eigen::Vector3d tmp_position = position + k0 * step_time * 0.5;
   Eigen::Vector3d tmp_velocity = velocity + l0 * step_time * 0.5;
   Eigen::Vector3d tmp_acceleration = acceleration + m0 * step_time * 0.5;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> tmp_Phi = Phi + n0 * step_time * 0.5;
+  Eigen::Matrix<double, 7, NUM_SINGLE_STATE> tmp_Phi = Phi + n0 * step_time * 0.5;
   acc_dist = acc_dist_cpy;
   Eigen::Vector3d k1 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l1 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m1 = -tmp_acceleration / tau_a;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n1 = CalculateJacobian(tmp_position, tmp_velocity); //*tmp_Phi;
+  Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n1 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
+#ifdef REDUCED_DYNAMIC
+  n1.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
+#endif // REDUCED_DYNAMIC
 
   tmp_position = position + k1 * step_time * 0.5;
   tmp_velocity = velocity + l1 * step_time * 0.5;
@@ -531,7 +545,10 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   Eigen::Vector3d k2 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l2 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m2 = -tmp_acceleration / tau_a;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n2 = CalculateJacobian(tmp_position, tmp_velocity); // *tmp_Phi;
+  Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n2 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
+#ifdef REDUCED_DYNAMIC
+  n2.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
+#endif // REDUCED_DYNAMIC
 
   tmp_position = position + k2 * step_time;
   tmp_velocity = velocity + l2 * step_time;
@@ -541,7 +558,10 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   Eigen::Vector3d k3 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
   Eigen::Vector3d m3 = -tmp_acceleration / tau_a;
-  Eigen::Matrix<double, NUM_SINGLE_STATE, NUM_SINGLE_STATE> n3 = CalculateJacobian(tmp_position, tmp_velocity); // *tmp_Phi;
+  Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n3 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
+#ifdef REDUCED_DYNAMIC
+  n3.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
+#endif // REDUCED_DYNAMIC
 
   position     += step_time * (k0 + 2.0 * k1 + 2.0 * k2 + k3) / 6.0;
   velocity     += step_time * (l0 + 2.0 * l1 + 2.0 * l2 + l3) / 6.0;
@@ -634,12 +654,6 @@ Eigen::MatrixXd PBD_dgps::UpdateP(void)
   Phi_all(num_state_main + 3, num_state_main + 3) = 0.0;
 #endif // CLOCK_IS_WHITE_NOISE
 
-  // a
-#ifdef REDUCED_DYNAMIC
-  Phi_all.block(7, 7, 3, 3) = CalculatePhi_a(observe_step_time);
-  Phi_all.block(num_state_main + 7, num_state_main + 7, 3, 3) = CalculatePhi_a(observe_step_time);
-#endif // REDUCED_DYNAMIC
-
 #ifdef AKF
   // ここでは更新しない．
 #else
@@ -664,7 +678,7 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
   double vx = velocity(0); double vy = velocity(1); double vz = velocity(2);
 
 
-  Eigen::MatrixXd A = Eigen::MatrixXd::Zero(NUM_SINGLE_STATE, NUM_SINGLE_STATE);
+  Eigen::MatrixXd A = Eigen::MatrixXd::Zero(7, 7);
   // (r, v)
   A(0, 4) = 1.0; A(1, 5) = 1.0; A(2, 6) = 1.0;
   // (v, r)
@@ -703,14 +717,6 @@ Eigen::MatrixXd PBD_dgps::CalculateJacobian(const Eigen::Vector3d& position, con
   A(6, 4) = -Cd * vx * vz / v;    A(6, 5) = -Cd * vy * vz / v;    A(6, 6) = -Cd * (vz * vz / v + v);
 #endif // AIR_DRAG_ON
 
-  // (v, a)
-#ifdef REDUCED_DYNAMIC
-  Eigen::Matrix3d rtn2eci = TransRTN2ECI(position, velocity);
-  A.block(4, 7, 3, 3) = PBD_DGPS_kConvNm2m*rtn2eci;
-#endif // REDUCED_DYNAMIC
-
-  // これはもしCdも推定しているならいる．
-  //A(4,10) = -v*vx;    A(5,10) = -v*vy;    A(6,10) = -v*vz;
   return A;
 };
 
@@ -1515,7 +1521,7 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
     // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
   }
 
-  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp);
+  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp); // 分散情報も使って，重み付き最小二乗法にした方がいいかも
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state)
