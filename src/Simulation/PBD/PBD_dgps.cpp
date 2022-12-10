@@ -36,7 +36,7 @@
 // Nの真値をしっかり実装しないとダメかも．
 // #define TIME_UPDATE_DEBUG
 
-// #define PCO
+#define PCO
 
 #define LAMBDA_DEBUG
 
@@ -415,6 +415,18 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_main[i] << ",";
     const libra::Vector<3> pco_target = x_est_target.pcc->GetPCO_mm();
     for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_target[i] << ",";
+
+    // is_fixedフラグ
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << x_est_main.ambiguity.is_fixed.at(i) << ",";
+      else ofs << false << ",";
+    }
+    for (int i = 0; i < NUM_GNSS_CH; ++i)
+    {
+      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << x_est_target.ambiguity.is_fixed.at(i) << ","; // N_est
+      else ofs << false << ",";
+    }
 
     ofs << std::endl;
   }
@@ -874,14 +886,6 @@ void PBD_dgps::KalmanFilter()
   P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose(); // ここでNの部分にも入ってくる？
   // P_ = tmp*P_;
 
-  // fixした部分に入ってきてしまうのでそれを0に落とす．
-  // for (int i = 0; i < NUM_GNSS_CH; ++i)
-  // {
-  //   // ひとまず対角成分だけにする．<- 対角だけじゃなかったのでその辺が悪さしてそう．
-  //   if (i < n_main && x_est_main.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0.0;
-  //   if (i < n_target && x_est_target.ambiguity.is_fixed.at(i)) P_(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE + i) = 0.0;
-  // }
-
 #ifdef AKF
   // residual
   // GRAPHIC*2 + SDCPにする．
@@ -893,23 +897,16 @@ void PBD_dgps::KalmanFilter()
 
   Eigen::VectorXd E_post = z - h_x_post;
   R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() + H*P_*H.transpose()); // residual based R_-adaptation
-
   Eigen::MatrixXd Q_dash = alpha * Q_ + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
 
   DynamicNoiseScaling(Q_dash, H);
   // これしてるから，絶対軌道精度の影響（つまり残差の大きさ）ではなくて，収束してしまう？
-/*
-  Q_ = Eigen::MatrixXd::Zero(num_state_all, num_state_all);
-  // a, cdtだけもらう．
-  Q_(3, 3) = Q_dash(3, 3);
-  Q_.block(7, 7, 3, 3) = Q_dash.block(7, 7, 3, 3);
-  Q_(num_main_state_all + 3, num_main_state_all + 3) = Q_dash(num_main_state_all + 3, num_main_state_all + 3);
-  Q_.block(num_main_state_all + 7, num_main_state_all + 7, 3, 3) = Q_dash.block(num_main_state_all + 7, num_main_state_all + 7, 3, 3);
-*/
+
 #endif // AKF
 
   // IAR
 #ifdef LAMBDA_DEBUG
+  bool lambda_result = false;
   Eigen::MatrixXd P_N_main = P_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main);
   Eigen::MatrixXd P_N_target = P_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target);
   if (P_N_main.maxCoeff() < 1.0 && P_N_target.maxCoeff() < 1.0)
@@ -922,7 +919,8 @@ void PBD_dgps::KalmanFilter()
     std::vector<std::vector<int>> observed_gnss_ids{gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_observations_.at(1).info_.now_observed_gnss_sat_id, common_observed_gnss_sat_id}; // ちょっと煩雑やけどまあ．．
 
     PBD_Lambda lambda(vec_N, vec_P_N, observed_gnss_ids, NUM_SINGLE_STATE);
-    if (lambda.Solve(METHOD::PAR_ILS))
+    lambda_result = lambda.Solve(METHOD::PAR_ILS);
+    if (lambda_result)
     {
       // 解けたNをベースに他状態量の更新を実施する．
       const Eigen::MatrixXd& M2M1 = lambda.M2M1_;
@@ -936,17 +934,18 @@ void PBD_dgps::KalmanFilter()
       GetStateFromVector(NUM_SINGLE_STATE + n_main, x_fixed_all); // Nはポインタで渡しているので必要なし．
 
       // 残差確認
-      h_x_post = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
+      Eigen::VectorXd h_x_post_lambda = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
       // clear
       for(int i = 0; i < 2; ++i) ClearGnssObserveModels(gnss_observed_models_.at(i));
-      UpdateObservations(z, h_x_post, H, R_V);
-      E_post = z - h_x_post;
-      if ((E_post.bottomRows(n_common).array() > L1_lambda).any()) // SDCPだけを確認する．
+      UpdateObservations(z, h_x_post_lambda, H, R_V);
+      Eigen::MatrixXd E_post_lambda = z - h_x_post_lambda;
+      if ((abs(E_post_lambda.bottomRows(n_common).array()) > L1_lambda).any()) // SDCPだけを確認する．
       {
         std::cout << "false integer!" << std::endl;
         GetStateFromVector(NUM_SINGLE_STATE + n_main, x_update); // 戻す．
         x_est_main.ambiguity = vec_N_cpy.at(0); // falseにセットしないとダメそう．
         x_est_target.ambiguity = vec_N_cpy.at(1);
+        lambda_result = false;
       }
       else
       {
@@ -971,22 +970,19 @@ void PBD_dgps::KalmanFilter()
       }
     }
   }
-  else
-  {
-    // process noiseだけ元に戻す．ここで毎回戻すと収束しない．
-    // Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(n_main, n_main);
-    // Q_.block(NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, NUM_SINGLE_STATE_ALL + NUM_SINGLE_STATE, n_target, n_target) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(n_target, n_target);
-  }
-
 #endif // LAMBDA_DEBUG
 
 // PCOの推定．
 #ifdef PCO
-  const double res_thresh = 1.0;
-  const double sdcp_res_mean = E_pre.bottomRows(n_common).mean();
-  if (std::fabs(E_pre.bottomRows(n_common).mean()) < res_thresh)
+  // if (lambda_result)
+  // 10以上fixしているときに限定する．
+  if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) >= 10 &&
+      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) >= 10)
   {
-    EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+    // if ((abs(E_post.bottomRows(n_common).array()) < L1_lambda).all())
+    {
+      EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+    }
   }
 #endif // PCO
 
@@ -1085,7 +1081,6 @@ void PBD_dgps::ResizeMHt(Eigen::MatrixXd& MHt, const int observe_gnss_m, const i
   RemoveColumns(MHt, observe_gnss_m, NUM_GNSS_CH - 1);
 };
 
-// FIXME: 再度この辺の観測行列にミスがないかを確認する．
 void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv, const int N_offset)
 {
   // ここもLEO satが把握している誤差ありの情報．
@@ -1507,8 +1502,10 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
     const double z_ddcp = sdcp_vec.at(ch) - sdcp_vec.at(top_gnss_ch);
     const double h_ddcp = h_sdcp(ch) - h_sdcp(top_gnss_ch);
     res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
-    // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainだけを考える．
+    // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainだけを考える．差分をとるとほぼ0なのでバグる．
     const libra::Vector<3> h = main_observation.GetGnssDirection(ch) - main_observation.GetGnssDirection(top_gnss_ch);
+    // const libra::Vector<3> h = gnss_observations_.at(1).GetGnssDirection(ch) - gnss_observations_.at(1).GetGnssDirection(top_gnss_ch)
+    //                           - (main_observation.GetGnssDirection(ch) - main_observation.GetGnssDirection(top_gnss_ch));
     for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = h[i];
     // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
   }

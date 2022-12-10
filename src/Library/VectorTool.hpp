@@ -46,7 +46,7 @@ inline const int GetIndexOfStdVector(std::vector<T> target_vector, const T targe
   std::vector<T>::iterator itr = std::find(target_vector.begin(), target_vector.end(), target_value);
   if (itr == target_vector.end()) // なんかboolを探索するとfalseになる
   {
-    std::cout << "not found" << target_value << std::endl;
+    // std::cout << "not found" << target_value << std::endl;
     // abort();
     return -1;
   }

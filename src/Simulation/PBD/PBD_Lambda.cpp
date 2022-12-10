@@ -192,9 +192,6 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
   }
 
   master_d_N_ = std::make_pair(ref_index, std::round(d_N_est(ref_index))); // Å‰‚ÍŠÛ‚ß‚éDpull-in—Ìˆæ‚Í‚±‚ê‚Å‚¢‚¢‚Ì‚©H
-  const int gnss_id = observed_gnss_sat_ids_.at(2).at(ref_index);
-  vec_N_.at(0)->is_fixed.at(GetIndexOfStdVector(vec_N_.at(0)->gnss_sat_id, gnss_id)) = true;
-  vec_N_.at(1)->is_fixed.at(GetIndexOfStdVector(vec_N_.at(1)->gnss_sat_id, gnss_id)) = true;
 
   // ‚»‚ÌŸ‚É“ñd·•ªN‚ÆŒë·‹¤•ªU‚ğŒvZD
   Eigen::MatrixXd M2 = Eigen::MatrixXd::Zero(sd_state_num - 1, sd_state_num);
@@ -204,7 +201,11 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
   int pos = 0;
   for (int i = 0; i < d_N_est.rows(); i++)
   {
-    if (i == ref_index) continue;
+    if (i == ref_index)
+    {
+      gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(ref_index));
+      continue;
+    }
     M_dd(pos, i) = 1.0; M_dd(pos, ref_index) = -1.0;
     gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(i)); // Å‰‚Ì•À‚Ñ‚ğ‹L˜^D
     pos++;
@@ -550,28 +551,26 @@ bool PBD_Lambda::DiscriminationTest(vector<Eigen::VectorXd> N_candidates) // ‚±‚
 
 void PBD_Lambda::RecoverNoDifference(const int fixed_num)
 {
-  vector<double> sd_N{(double)master_d_N_.second};
-  for (int i = 0; i < n_; i++)
+  vector<double> sd_N;
+  int pos = 0;
+  for (int i = 0; i < n_ + 1; i++)
   {
-    sd_N.push_back(N_(i) + master_d_N_.second); // N_‚Ídouble difference‚È‚Ì‚Åsingle difference‚É–ß‚·D
+    if (i == master_d_N_.first) sd_N.push_back(master_d_N_.second);
+    else
+    {
+      sd_N.push_back(N_(pos) + master_d_N_.second); // N_‚Ídouble difference‚È‚Ì‚Åsingle difference‚É–ß‚·D
+      pos++;
+    }
   }
 
-  // ‚Ü‚¸QÆ‰q¯‚ÉŠÖ‚µ‚Ä–ß‚·D
-  const int reference_sat_index = master_d_N_.first;
-  const int reference_gnss_id = observed_gnss_sat_ids_.at(2).at(reference_sat_index);
-  const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), reference_gnss_id);
-  const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), reference_gnss_id);
-  vec_N_.at(1)->N.at(target_ch) = sd_N.at(0) + vec_N_.at(0)->N.at(main_ch);
-
-  // Ÿ‚É‚»‚Ì‘¼‚Ì‰q¯‚ÉŠÖ‚µ‚Ä–ß‚·D
-  for (int i = 1; i < sd_N.size(); i++)
+  for (int i = 0; i < gnss_ids_.size(); i++)
   {
-    const int gnss_id = gnss_ids_.at(i - 1);
+    const int gnss_id = gnss_ids_.at(i);
     const int ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(2), gnss_id);
     const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), gnss_id);
     const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), gnss_id);
     vec_N_.at(1)->N.at(target_ch) = sd_N.at(ch) + vec_N_.at(0)->N.at(main_ch);
-    if (i <= fixed_num)
+    if (i < fixed_num)
     {
       vec_N_.at(0)->is_fixed.at(main_ch) = true;
       vec_N_.at(1)->is_fixed.at(target_ch) = true;
