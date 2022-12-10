@@ -980,9 +980,9 @@ void PBD_dgps::KalmanFilter()
 // PCOの推定．
 #ifdef PCO
   // if (lambda_result)
-  // 10以上fixしているときに限定する．
-  if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) >= 10 &&
-      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) >= 10)
+  // 全部fixしているときに限定する．
+  if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
+      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) >= n_target)
   {
     // if ((abs(E_post.bottomRows(n_common).array()) < L1_lambda).all())
     {

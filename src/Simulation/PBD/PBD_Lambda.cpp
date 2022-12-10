@@ -201,11 +201,8 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
   int pos = 0;
   for (int i = 0; i < d_N_est.rows(); i++)
   {
-    if (i == ref_index)
-    {
-      gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(ref_index));
-      continue;
-    }
+    if (i == ref_index) continue;
+
     M_dd(pos, i) = 1.0; M_dd(pos, ref_index) = -1.0;
     gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(i)); // 最初の並びを記録．
     pos++;
@@ -563,6 +560,9 @@ void PBD_Lambda::RecoverNoDifference(const int fixed_num)
     }
   }
 
+  // gnss_ids_にはfix時のソートの順で並んでいる．つまり下の行のものからfixしているということ．
+  gnss_ids_.push_back(observed_gnss_sat_ids_.at(2).at(master_d_N_.first));
+  std::reverse(gnss_ids_.begin(), gnss_ids_.end());
   for (int i = 0; i < gnss_ids_.size(); i++)
   {
     const int gnss_id = gnss_ids_.at(i);
@@ -570,7 +570,7 @@ void PBD_Lambda::RecoverNoDifference(const int fixed_num)
     const int main_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(0), gnss_id);
     const int target_ch = GetIndexOfStdVector(observed_gnss_sat_ids_.at(1), gnss_id);
     vec_N_.at(1)->N.at(target_ch) = sd_N.at(ch) + vec_N_.at(0)->N.at(main_ch);
-    if (i < fixed_num)
+    if (i <= fixed_num) // fixed_numはDDの数なのでNで考えると+1
     {
       vec_N_.at(0)->is_fixed.at(main_ch) = true;
       vec_N_.at(1)->is_fixed.at(target_ch) = true;
