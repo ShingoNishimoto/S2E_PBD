@@ -933,7 +933,6 @@ void PBD_dgps::KalmanFilter()
 
       // 残差確認
       Eigen::VectorXd h_x_post_lambda = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
-
       UpdateObservations(z, h_x_post_lambda, H, pre_Rv); // 更新するのはSDCPだけでいいので無駄．
       Eigen::MatrixXd E_post_lambda = z - h_x_post_lambda;
       if ((abs(E_post_lambda.bottomRows(n_common).array()) > L1_lambda).any()) // SDCPだけを確認する．
@@ -965,24 +964,20 @@ void PBD_dgps::KalmanFilter()
         // Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, n_main, n_main) = Eigen::MatrixXd::Zero(n_main, n_main);
         // Q_.block(num_main_state_all + NUM_SINGLE_STATE, num_main_state_all + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
       }
-    }
-  }
-#endif // LAMBDA_DEBUG
 
 // PCOの推定．
 #ifdef PCO
-  // if (lambda_result)
-  // 全部fixしているときに限定する．
-  if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
-      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == n_target)
-  {
-    // if ((abs(E_post.bottomRows(n_common).array()) < L1_lambda).all())
-    {
-      EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
-      // 後確認しないと間違った解に収束する．
+      // 全部fixしているときに限定する．
+      if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
+          std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == n_target)
+      {
+        EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+      }
+#endif // PCO
+
     }
   }
-#endif // PCO
+#endif // LAMBDA_DEBUG
 
   if (!std::isfinite(x_est_main.position(0)))
   {

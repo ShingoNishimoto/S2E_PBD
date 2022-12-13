@@ -149,26 +149,30 @@ void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, cons
     Eigen::Vector3d dpco = - (H_dpco_.transpose() * W_dpco_ * H_dpco_).inverse() * (H_dpco_.transpose() * W_dpco_ * V_Res_dpco_); // 3次元
 
 // debug ++++++++++++++++++++++++++++++++++++++++++++++++
-    // Eigen::VectorXd dd_pcc_after = - H_dpco_ * dpco;
+    Eigen::VectorXd dd_pcc_after = - H_dpco_ * dpco;
     // std::cout << "H dpco" << H_dpco_ << std::endl;
     // std::cout << "after estimated ddpcc" << dd_pcc_after << std::endl;
     // std::cout << "raw ddpcc" << V_Res_dpco_ << std::endl;
-    // double pre_acc = 0;
-    // for (int i = 0; i < V_Res_dpco_.rows(); i++) pre_acc += pow(V_Res_dpco_(i), 2.0);
-    // pre_acc = sqrt(pre_acc) / V_Res_dpco_.rows();
+    double pre_acc = 0;
+    for (int i = 0; i < V_Res_dpco_.rows(); i++) pre_acc += pow(V_Res_dpco_(i), 2.0);
+    pre_acc = sqrt(pre_acc) / V_Res_dpco_.rows(); // RMS
     // std::cout << "pre accuracy" << pre_acc << std::endl;
 
-    // Eigen::VectorXd post_res = V_Res_dpco_ - dd_pcc_after;
-    // double post_acc = 0;
-    // for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
-    // post_acc = sqrt(post_acc) / post_res.rows();
+    Eigen::VectorXd post_res = V_Res_dpco_ - dd_pcc_after;
+    double post_acc = 0;
+    for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
+    post_acc = sqrt(post_acc) / post_res.rows();
     // std::cout << "post accuracy" << post_acc << std::endl;
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-    libra::Vector<3> dpco_mm(0);
-    for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
+    // 改善した時だけ更新する．
+    if (pre_acc > post_acc)
+    {
+      libra::Vector<3> dpco_mm(0);
+      for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
+      UpdatePCO(dpco_mm);
+    }
 
-    UpdatePCO(dpco_mm);
     // リセット
     V_Res_dpco_.resize(0);
     H_dpco_.resize(0, 0);
