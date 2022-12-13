@@ -33,7 +33,6 @@
 
 // #define GEOP_DEBUG
 // #define N_DEBUG
-// Nの真値をしっかり実装しないとダメかも．
 // #define TIME_UPDATE_DEBUG
 
 #define PCO
@@ -599,7 +598,7 @@ Eigen::Vector3d PBD_dgps::VelocityDifferential(const Eigen::Vector3d& position, 
   // for (uint8_t i = 0; i < 3; i++) acc_dist(i) = acc_j2_eci[i];
 
 #ifndef GEOP_DEBUG
-  // AddGeoPotentialDisturbance(position, acc_dist); // 一旦コメントアウトする．
+  // AddGeoPotentialDisturbance(position, acc_dist); // coreに合わせるために一旦コメントアウトする．
 #endif // GEOP_DEBUG
 
 #ifdef AIR_DRAG_ON
@@ -837,14 +836,9 @@ void PBD_dgps::KalmanFilter()
   Eigen::VectorXd h_x = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
 
   Eigen::MatrixXd H = Eigen::MatrixXd::Zero(num_observables, num_state_all); //観測行列（dhx/dx）
-  Eigen::VectorXd R_V = Eigen::MatrixXd::Zero(num_observables, 1); // 観測誤差共分散．
-  UpdateObservations(z, h_x, H, R_V);
-
-// #ifdef AKF
-//   // Rのresizeが必要．
-// #else
-  R_ = R_V.asDiagonal();
-// #endif
+  Eigen::VectorXd pre_Rv = Eigen::VectorXd::Zero(num_observables); // 観測誤差共分散．
+  for (int i = 0; i < num_observables; i++) pre_Rv(i) = R_(i, i); // このままだと観測衛星数が変わる場合に対応できない．
+  UpdateObservations(z, h_x, H, pre_Rv);
 
   // ここにfixしたNの部分が含まれているから不安定になる？
   Eigen::MatrixXd hmh = H * P_ * H.transpose();
@@ -880,17 +874,11 @@ void PBD_dgps::KalmanFilter()
   //更新
   GetStateFromVector(num_main_state_all, x_update); // N以外を代入
 
-#ifndef N_DEBUG
   for (int i = 0; i < NUM_GNSS_CH; ++i)
   {
     if (i < n_main && !x_est_main.ambiguity.is_fixed.at(i)) x_est_main.ambiguity.N.at(i) = x_update(NUM_SINGLE_STATE + i);
     if (i < n_target && !x_est_target.ambiguity.is_fixed.at(i)) x_est_target.ambiguity.N.at(i) = x_update(num_main_state_all + NUM_SINGLE_STATE + i);
   }
-#else
-    // 一旦整数不定性は0とする．
-    x_est_main.ambiguity.N = std::vector<double>(NUM_GNSS_CH, 0);
-    x_est_target.ambiguity.N = std::vector<double>(NUM_GNSS_CH, 0);
-#endif // N_DEBUG
 
   Eigen::MatrixXd I = Eigen::MatrixXd::Identity(num_state_all, num_state_all);
   tmp = (I - K*H);
@@ -902,17 +890,16 @@ void PBD_dgps::KalmanFilter()
   // GRAPHIC*2 + SDCPにする．
   Eigen::VectorXd h_x_post = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
 
-  // clear
-  for(int i = 0; i < 2; ++i) ClearGnssObserveModels(gnss_observed_models_.at(i));
-  UpdateObservations(z, h_x_post, H, R_V);
+  for (int i = 0; i < num_observables; i++) pre_Rv(i) = R_(i, i); // このままだと観測衛星数が変わる場合に対応できない．
+  UpdateObservations(z, h_x_post, H, pre_Rv);
 
   Eigen::VectorXd E_post = z - h_x_post;
-  R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() + H*P_*H.transpose()); // residual based R_-adaptation
+  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() + H*P_*H.transpose()); // residual based R_-adaptation
+  R_ = alpha * R_ + (1 - alpha) * E_post*E_post.transpose(); // residual based R_-adaptation
   Eigen::MatrixXd Q_dash = alpha * Q_ + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
 
   DynamicNoiseScaling(Q_dash, H);
   // これしてるから，絶対軌道精度の影響（つまり残差の大きさ）ではなくて，収束してしまう？
-
 #endif // AKF
 
   // IAR
@@ -946,9 +933,8 @@ void PBD_dgps::KalmanFilter()
 
       // 残差確認
       Eigen::VectorXd h_x_post_lambda = Eigen::VectorXd::Zero(num_observables); // 観測モデル行列
-      // clear
-      for(int i = 0; i < 2; ++i) ClearGnssObserveModels(gnss_observed_models_.at(i));
-      UpdateObservations(z, h_x_post_lambda, H, R_V);
+
+      UpdateObservations(z, h_x_post_lambda, H, pre_Rv); // 更新するのはSDCPだけでいいので無駄．
       Eigen::MatrixXd E_post_lambda = z - h_x_post_lambda;
       if ((abs(E_post_lambda.bottomRows(n_common).array()) > L1_lambda).any()) // SDCPだけを確認する．
       {
@@ -988,11 +974,12 @@ void PBD_dgps::KalmanFilter()
   // if (lambda_result)
   // 全部fixしているときに限定する．
   if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
-      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) >= n_target)
+      std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == n_target)
   {
     // if ((abs(E_post.bottomRows(n_common).array()) < L1_lambda).all())
     {
       EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+      // 後確認しないと間違った解に収束する．
     }
   }
 #endif // PCO
@@ -1103,28 +1090,25 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   const int index = GetIndexOfStdVector<int>(observe_info_.now_observed_gnss_sat_id, gnss_sat_id);
 
   const GnssObservedValues& observed_val_ = gnss_observation.observed_values_;
-  auto gnss_position = observed_val_.gnss_satellites_position.at(index);
-  double gnss_clock = observed_val_.gnss_clock.at(index);
   // とりあえずL1を使う．
   double pseudo_range = observed_val_.L1_pseudo_range.at(index);
   const auto& carrier_phase = observed_val_.L1_carrier_phase.at(index);
   double carrier_phase_range = carrier_phase.first * x_est.lambda; // [m]で受け取る．
 
-  libra::Vector<3> sat_position{ 0.0 };
-  sat_position = ConvEigenVecToLibraVec<3>(x_est.position);
+  libra::Vector<3> sat_position = ConvEigenVecToLibraVec<3>(x_est.position);
   const double sat_clock = x_est.clock(0);
   // ここら辺はGnssObserveModel内に格納する．
   libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
-  double geometric_range = gnss_observation.CalculateGeometricRange(receive_pos, gnss_position);
+  double geometric_range = gnss_observation.CalculateGeometricRange(gnss_sat_id, receive_pos);
   observe_model.geometric_range.push_back(geometric_range);
   if (observe_model.geometric_range.size() != (index + 1)) abort();
 
-  double pseudo_range_model = gnss_observation.CalculatePseudoRange(sat_position, gnss_position, sat_clock, gnss_clock);
+  double pseudo_range_model = gnss_observation.CalculatePseudoRange(gnss_sat_id, sat_position, sat_clock);
   observe_model.pseudo_range_model.push_back(pseudo_range_model);
   if (observe_model.pseudo_range_model.size() != (index + 1)) abort();
 
   const double pcc = x_est.pcc->GetPCC_m(gnss_observation.GetGnssAzimuthDeg(index), gnss_observation.GetGnssElevationDeg(index));
-  double carrier_phase_model = gnss_observation.CalculateCarrierPhase(sat_position, gnss_position, sat_clock, gnss_clock, x_est.ambiguity.N.at(index), L1_lambda, pcc);
+  double carrier_phase_model = gnss_observation.CalculateCarrierPhase(gnss_sat_id, sat_position, sat_clock, x_est.ambiguity.N.at(index), L1_lambda, pcc);
   observe_model.carrier_phase_model.push_back(carrier_phase_model);
   if (observe_model.carrier_phase_model.size() != (index + 1)) abort();
 
@@ -1134,10 +1118,11 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   const int col_offset = num_state_offset + NUM_SINGLE_STATE + index;
   z(row_offset) = (pseudo_range + carrier_phase_range) / 2;
   h_x(row_offset) = (pseudo_range_model + carrier_phase_model) / 2;
+  const libra::Vector<3> los_vec = gnss_observation.GetGnssDirection_i(index);
   for (int j = 0; j < 3; ++j) {
     const int col_index = num_state_offset + j;
     // position
-    H(row_offset, col_index) = (x_est.position(j) - gnss_position[j]) / geometric_range;
+    H(row_offset, col_index) = - los_vec[j];
   }
   // clock
   H(row_offset, num_state_offset + 3) = 1.0;
@@ -1145,12 +1130,10 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
 #ifndef N_DEBUG
   H(row_offset, col_offset) = 0.5 * x_est.lambda; // GRAPHIC N
 #endif // N_DEBUG
-  Rv(row_offset) = pow(pseudo_sigma / 2.0, 2.0) + pow(carrier_sigma / 2.0, 2.0);
 };
 
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
-  // std::find for common index
   const int common_index = GetIndexOfStdVector<int>(common_observed_gnss_sat_id, gnss_sat_id);
   const int row_offset = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + common_index;
   PBD_GnssObservation& main_observation = gnss_observations_.at(0);
@@ -1170,20 +1153,17 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   const auto& carrier_phase_target = target_observation.observed_values_.L1_carrier_phase.at(target_index);
   double carrier_phase_range_target = carrier_phase_target.first * x_est_target.lambda;
 
-  auto gnss_position = main_observation.observed_values_.gnss_satellites_position.at(main_index);
-
-  GnssObserveModel& main_observe_model = gnss_observed_models_.at(0);
-  GnssObserveModel& target_observe_model = gnss_observed_models_.at(1);
-
   // SDCP
   z(row_offset) = carrier_phase_range_target - carrier_phase_range_main;
-  h_x(row_offset) = target_observe_model.carrier_phase_model.at(target_index) - main_observe_model.carrier_phase_model.at(main_index);
+  h_x(row_offset) = gnss_observed_models_.at(1).carrier_phase_model.at(target_index) - gnss_observed_models_.at(0).carrier_phase_model.at(main_index);
+  const libra::Vector<3> los_vec_main = main_observation.GetGnssDirection_i(main_index);
+  const libra::Vector<3> los_vec_target = target_observation.GetGnssDirection_i(target_index);
   for (int j = 0; j < 3; ++j) {
     // position
     // main
-    H(row_offset, j) = (gnss_position[j] - x_est_main.position(j)) / main_observe_model.geometric_range.at(main_index);
+    H(row_offset, j) = los_vec_main[j];
     // target
-    H(row_offset, num_main_state_all + j) = (x_est_target.position(j) - gnss_position[j]) / target_observe_model.geometric_range.at(target_index);
+    H(row_offset, num_main_state_all + j) = - los_vec_target[j];
   }
   // clock
   H(row_offset, 3) = -1.0;
@@ -1193,13 +1173,14 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   H(row_offset, col_offset_main) = -1.0 * x_est_main.lambda; // SDCP N
   H(row_offset, col_offset_target) = 1.0 * x_est_target.lambda; // SDCP N
 #endif // N_DEBUG
-
-  Rv(row_offset) = pow(sqrt(2.0) * carrier_sigma, 2.0);
 };
 
 // この内部で観測量関連を　すべて更新する．TODO: 更新しなくていいものもまとめてる気がするから，したいものだけに限定した方がいいかも．
 void PBD_dgps::UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
+  // 追加する前に前のものをクリア．
+  ClearGnssObserveModels(gnss_observed_models_.at(0));
+  ClearGnssObserveModels(gnss_observed_models_.at(1));
   // FIXME: このアクセス方法では汎用性は低い．
   const GnssObserveInfo& main_info_ = gnss_observations_.at(0).info_;
   const GnssObserveInfo& target_info_ = gnss_observations_.at(1).info_;
@@ -1214,18 +1195,21 @@ void PBD_dgps::UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eige
     if (it_main != main_info_.now_observed_gnss_sat_id.end() && *it_main == id)
     {
       UpdateObservationsGRAPHIC(0, x_est_main, id, z, h_x, H, Rv, 0);
+      AdjustReceiveCovariance(main_info_.now_observed_gnss_sat_id, main_info_.pre_observed_gnss_sat_id, id, 0, Rv);
     }
     // if target
     auto it_target = std::find(target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end(), id);
     if (it_target != target_info_.now_observed_gnss_sat_id.end() && *it_target == id)
     {
       UpdateObservationsGRAPHIC(1, x_est_target, id, z, h_x, H, Rv, visible_gnss_nums_.at(0));
+      AdjustReceiveCovariance(target_info_.now_observed_gnss_sat_id, target_info_.pre_observed_gnss_sat_id, id, visible_gnss_nums_.at(0), Rv);
     }
     // if common
     auto it_common = std::find(common_observed_gnss_sat_id.begin(), common_observed_gnss_sat_id.end(), id);
     if (it_common != common_observed_gnss_sat_id.end() && *it_common == id)
     {
       UpdateObservationsSDCP(id, z, h_x, H, Rv);
+      AdjustReceiveCovariance(common_observed_gnss_sat_id, main_info_.pre_observed_gnss_sat_id, id, visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1), Rv);
     }
   }
 }
@@ -1350,7 +1334,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       sat_info_.at(sat_id).true_N(now_index) = - gnss_observation.l1_bias_.at(gnss_sat_id);
       int offset = NUM_SINGLE_STATE + now_index;
 
-      // 行と列に関してもリセット
+      // 対角成分だけ初期化．
       P(offset, offset) = pow(sigma_N_ini, 2.0);
       Q(offset, offset) = pow(sigma_N_process, 2.0);
       ++now_index;
@@ -1399,6 +1383,28 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
   for (int i = visible_gnss_nums_.at(sat_id); i < NUM_GNSS_CH; i++)
   {
     sat_info_.at(sat_id).true_N(i) = 0;
+  }
+}
+
+// もう少しうまくやりたい．
+void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv)
+{
+  const int now_index = GetIndexOfStdVector(now_gnss_sat_ids, gnss_sat_id);
+  const int offset = base_offset + now_index;
+  // 対角成分以外は0とする．
+  R_.row(offset) = Eigen::MatrixXd::Zero(1, R_.cols());
+  R_.col(offset) = Eigen::MatrixXd::Zero(R_.rows(), 1);
+  if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) != pre_gnss_sat_ids.end())
+  {
+    const int pre_index = GetIndexOfStdVector(pre_gnss_sat_ids, gnss_sat_id);
+    R_(offset, offset) = pre_Rv(base_offset + pre_index); // 対角以外はリセットした方がいい？
+  }
+  else
+  {
+    // GRAPHIC
+    if (base_offset <= NUM_GNSS_CH) R_(offset, offset) = pow(pseudo_sigma, 2.0) + pow(carrier_sigma, 2.0);
+    // SDCP
+    else R_(offset, offset) = 2.0 * pow(carrier_sigma, 2.0);
   }
 }
 
@@ -1461,8 +1467,7 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
 void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
 {
   const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
-  const PBD_GNSSReceiver* main_receiver = main_observation.GetReceiver();
-  const std::vector<GnssInfo> main_vec_gnssinfo = main_receiver->GetGnssInfoVec();
+  const std::vector<GnssInfo> main_vec_gnssinfo = main_observation.GetReceiver()->GetGnssInfoVec();
 
   const RelativePositionSensor* rel_sensor = sat_info_.at(0).components->GetRelativePositionSensor();
 
@@ -1472,56 +1477,96 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
 
   x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
 
-  double max_latitude = 0;
-  int top_gnss_ch;
+  double max_elevation = 0;
+  int ref_gnss_ch;
   const int visible_ch_num = common_observed_gnss_sat_id.size();
   Eigen::VectorXd h_sdcp = Eigen::VectorXd::Zero(visible_ch_num);
-  for (auto gnss_id: common_observed_gnss_sat_id)
+  Eigen::MatrixXd R_sdcp = R_.bottomRightCorner(visible_ch_num, visible_ch_num);
+  Eigen::VectorXd Rv_sdcp(visible_ch_num);
+  // 低仰角時におけるPCVの影響を小さくするためにelevationに閾値を設けることにする．
+  const double ele_thresh_deg = 30; // deg
+  int count = 0;
+  std::vector<double> sdcp_raw;
+  std::vector<int> gnss_ids;
+  for (int ch = 0; ch < visible_ch_num; ch++)
   {
+    const int gnss_id = common_observed_gnss_sat_id.at(ch);
     const int main_ch = GetIndexOfStdVector<int>(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
     const int target_ch = GetIndexOfStdVector<int>(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
-    // 搬送波位相観測モデルを再計算．FIXME: この辺関数化したい，じゃないと煩雑すぎる．
-    const libra::Vector<3> gnss_position = main_observation.observed_values_.gnss_satellites_position.at(main_ch);
-    const double gnss_clock = main_observation.observed_values_.gnss_clock.at(main_ch);
 
-    const double pcc_main = x_est_main.pcc->GetPCC_m(main_observation.GetGnssAzimuthDeg(main_ch), main_observation.GetGnssElevationDeg(main_ch));
-    const double carrier_phase_main = main_observation.CalculateCarrierPhase(ConvEigenVecToLibraVec<3>(x_est_main.position), gnss_position, x_est_main.clock(0), gnss_clock, x_est_main.ambiguity.N.at(main_ch), L1_lambda, pcc_main);
+    double main_elevation_deg = main_observation.GetGnssElevationDeg(main_ch);
+    if (main_elevation_deg < ele_thresh_deg) continue;
+
+    const double pcc_main = x_est_main.pcc->GetPCC_m(main_observation.GetGnssAzimuthDeg(main_ch), main_elevation_deg);
+    const double carrier_phase_main = main_observation.CalculateCarrierPhase(gnss_id, ConvEigenVecToLibraVec<3>(x_est_main.position), x_est_main.clock(0), x_est_main.ambiguity.N.at(main_ch), L1_lambda, pcc_main);
 
     const double pcc_target = x_est_target.pcc->GetPCC_m(gnss_observations_.at(1).GetGnssAzimuthDeg(target_ch), gnss_observations_.at(1).GetGnssElevationDeg(target_ch));
-    const double carrier_phase_target = gnss_observations_.at(1).CalculateCarrierPhase(ConvEigenVecToLibraVec<3>(x_est_target.position), gnss_position, x_est_target.clock(0), gnss_clock, x_est_target.ambiguity.N.at(target_ch), L1_lambda, pcc_target);
+    const double carrier_phase_target = gnss_observations_.at(1).CalculateCarrierPhase(gnss_id, ConvEigenVecToLibraVec<3>(x_est_target.position), x_est_target.clock(0), x_est_target.ambiguity.N.at(target_ch), L1_lambda, pcc_target);
 
-    h_sdcp(main_ch) = carrier_phase_target - carrier_phase_main;
+    h_sdcp(count) = carrier_phase_target - carrier_phase_main;
+    sdcp_raw.push_back(sdcp_vec.at(ch));
+    gnss_ids.push_back(gnss_id);
+    Rv_sdcp(count) = R_sdcp(ch, ch);
 
-  // 仰角が最も高いGNSS衛星を探して参照衛星とする．
-    if (main_vec_gnssinfo.at(main_ch).latitude > max_latitude)
+  // 視線方向が重要であることを考えて仰角最大の衛星を参照にする．
+    if (main_elevation_deg > max_elevation)
     {
-      max_latitude = main_vec_gnssinfo.at(main_ch).latitude;
-      top_gnss_ch = main_ch;
+      max_elevation = main_elevation_deg;
+      ref_gnss_ch = count;
     }
+    count++;
   }
 
-  Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(visible_ch_num - 1);
-  Eigen::MatrixXd H = Eigen::MatrixXd::Zero(visible_ch_num - 1, 3);
+  if (count == 0) return;
+
+  h_sdcp.conservativeResize(count);
+  Rv_sdcp.conservativeResize(count);
+  R_sdcp = Rv_sdcp.asDiagonal();
+  Eigen::MatrixXd M_dd = Eigen::MatrixXd::Zero(count - 1, count);
+  Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
+  Eigen::MatrixXd H = Eigen::MatrixXd::Zero(count - 1, 3);
   int ddcp_ch_offset = 0;
-  for (int ch = 0; ch < visible_ch_num - 1; ch++)
+  for (int ch = 0; ch < count; ch++)
   {
-    if (ch == top_gnss_ch)
+    if (ch == ref_gnss_ch)
     {
       ddcp_ch_offset = -1;
       continue;
     }
-    const double z_ddcp = sdcp_vec.at(ch) - sdcp_vec.at(top_gnss_ch);
-    const double h_ddcp = h_sdcp(ch) - h_sdcp(top_gnss_ch);
+
+    const double z_ddcp = sdcp_raw.at(ch) - sdcp_raw.at(ref_gnss_ch);
+    const double h_ddcp = h_sdcp(ch) - h_sdcp(ref_gnss_ch);
+
+    // std::cout << "z_ddcp" << z_ddcp << std::endl;
+    // std::cout << "h_ddcp" << h_ddcp << std::endl;
+
     res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
-    // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainだけを考える．差分をとるとほぼ0なのでバグる．
-    const libra::Vector<3> h = main_observation.GetGnssDirection(ch) - main_observation.GetGnssDirection(top_gnss_ch);
-    // const libra::Vector<3> h = gnss_observations_.at(1).GetGnssDirection(ch) - gnss_observations_.at(1).GetGnssDirection(top_gnss_ch)
-    //                           - (main_observation.GetGnssDirection(ch) - main_observation.GetGnssDirection(top_gnss_ch));
-    for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = h[i];
+    M_dd(ch + ddcp_ch_offset, ch) = 1.0; M_dd(ch + ddcp_ch_offset, ref_gnss_ch) = -1.0;
+    // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainのものを考える．
+    const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
+    const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
+    const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
+
+    for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
     // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
   }
+  Eigen::MatrixXd R_ddcp = M_dd * R_sdcp * M_dd.transpose();
 
-  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp); // 分散情報も使って，重み付き最小二乗法にした方がいいかも
+  Eigen::MatrixXd W = Eigen::MatrixXd::Zero(R_ddcp.rows(), R_ddcp.cols());
+  for (int i = 0; i < count - 1; i++)
+  {
+    // if (fabs(R_ddcp(i, i)) > 1e-10) W(i, i) = 1.0 / R_ddcp(i, i);
+    for (int j = i; j < count - 1; j++)
+    {
+      // 0割りしないようにする．
+      if (fabs(R_ddcp(i, j)) > 1e-10){ W(i, j) = 1.0 / R_ddcp(i, j); W(j, i) = W(i, j); }
+      // if (i != j){ W(i, j) = 0.0; W(j, i) = 0.0; }
+    }
+  }
+  // std::cout << "W" << W << std::endl;
+
+  // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
+  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp, W);
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state)

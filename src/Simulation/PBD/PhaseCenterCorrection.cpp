@@ -7,7 +7,7 @@
 // #define DISTANCE_BASED_INTERPOLATION
 #define PIECEWISE_FUNCTION
 
-#define LS_EPOCH_NUM (100)
+#define WLS_DATA_NUM (1 * 11)
 
 // PCOは左手系(north, east, up)で定義されている．左手系なのでazimuthは時計まわり．これに合うように要修正！
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
@@ -104,39 +104,75 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
   // 距離に応じた重み付き平均 <- 角度に対してユークリッド距離を定義するのは微妙な気がするので，論文の手法に従う方がよさそう．
   double target_pcv = w_1*pcv_mm_1 + w_2*pcv_mm_2 + w_3*pcv_mm_3 + w_4*pcv_mm_4;
 
-  double pcc;
-  std::vector<double> e_vec = {cos(elevation_deg * libra::deg_to_rad) * cos(azimuth_deg * libra::deg_to_rad),
-                            cos(elevation_deg * libra::deg_to_rad) * sin(azimuth_deg * libra::deg_to_rad),
-                            sin(elevation_deg * libra::deg_to_rad)};
+  const double azi_rad = azimuth_deg * libra::deg_to_rad;
+  const double ele_rad = elevation_deg * libra::deg_to_rad;
+  std::vector<double> e_vec = { cos(ele_rad) * cos(azi_rad),
+                                cos(ele_rad) * sin(azi_rad),
+                                sin(ele_rad) };
   // この時PCOはARP固定座標系であるが，Azimuth，Elevationもコンポ固定の座標系であるため特に変換を入れてない．コンポ座標系とARP固定座標が一致してるかどうかは要注意．
+  double pcc;
   pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv;
   pcc /= 1000; // mに変換
   return pcc;
 }
 
 // template <typename T, size_t N>
-void PhaseCenterCorrection::DpcoInitialEstimation(Eigen::MatrixXd H, Eigen::VectorXd V_Res)
+void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W)
 {
   static int epoch_count = 0;
 
-  const int current_size = V_Res_dpco_.rows();
   const int N = V_Res.rows();
+  const int current_size = V_Res_dpco_.rows();
   const int new_size = current_size + N;
   H_dpco_.conservativeResize(new_size, 3);
   V_Res_dpco_.conservativeResize(new_size);
+  Eigen::MatrixXd W_cpy = W_dpco_;
+  W_dpco_ = Eigen::MatrixXd::Zero(new_size, new_size);
 
   // append new matrix and observations
   H_dpco_.block(current_size, 0, N, 3) = H;
   V_Res_dpco_.block(current_size, 0, N, 1) = V_Res;
-  epoch_count++;
+  W_dpco_.topLeftCorner(current_size, current_size) = W_cpy;
+  W_dpco_.block(current_size, current_size, N, N) = W;
 
-  if (epoch_count >= LS_EPOCH_NUM)
+  // std::cout << "H" << H_dpco_ << std::endl;
+  // std::cout << "V" << V_Res_dpco_ << std::endl;
+  // std::cout << "W" << W_dpco_ << std::endl;
+
+  epoch_count++;
+  if (new_size >= WLS_DATA_NUM)
   {
-    Eigen::Vector3d dpco = -(H_dpco_.transpose() * H_dpco_).inverse() * (H_dpco_.transpose() * V_Res_dpco_); // 3次元
-    libra::Vector<3> dpco_mm;
+    Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(W_dpco_);
+    auto rank = lu_decomp.rank(); // なんかうまく計算できてなさそう．<- Wがでかすぎると行列式が0になる可能性はある．Diagonalが<1なので．
+    // if (rank < W_dpco_.rows()) abort(); // 正則判定．
+
+    Eigen::Vector3d dpco = - (H_dpco_.transpose() * W_dpco_ * H_dpco_).inverse() * (H_dpco_.transpose() * W_dpco_ * V_Res_dpco_); // 3次元
+
+// debug ++++++++++++++++++++++++++++++++++++++++++++++++
+    // Eigen::VectorXd dd_pcc_after = - H_dpco_ * dpco;
+    // std::cout << "H dpco" << H_dpco_ << std::endl;
+    // std::cout << "after estimated ddpcc" << dd_pcc_after << std::endl;
+    // std::cout << "raw ddpcc" << V_Res_dpco_ << std::endl;
+    // double pre_acc = 0;
+    // for (int i = 0; i < V_Res_dpco_.rows(); i++) pre_acc += pow(V_Res_dpco_(i), 2.0);
+    // pre_acc = sqrt(pre_acc) / V_Res_dpco_.rows();
+    // std::cout << "pre accuracy" << pre_acc << std::endl;
+
+    // Eigen::VectorXd post_res = V_Res_dpco_ - dd_pcc_after;
+    // double post_acc = 0;
+    // for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
+    // post_acc = sqrt(post_acc) / post_res.rows();
+    // std::cout << "post accuracy" << post_acc << std::endl;
+// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    libra::Vector<3> dpco_mm(0);
     for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
 
-    pco_mm_ += dpco_mm;
+    UpdatePCO(dpco_mm);
+    // リセット
+    V_Res_dpco_.resize(0);
+    H_dpco_.resize(0, 0);
+    W_dpco_.resize(0, 0);
     epoch_count = 0;
   }
 }

@@ -120,7 +120,7 @@ void PBD_GnssObservation::ProcessGnssObservations(void)
   }
 }
 
-const libra::Vector<3> PBD_GnssObservation::GetGnssDirection(const int ch) const
+const libra::Vector<3> PBD_GnssObservation::GetGnssDirection_c(const int ch) const
 {
   const double azi_rad = receiver_->GetGnssInfo(ch).longitude;
   const double ele_rad = receiver_->GetGnssInfo(ch).latitude;
@@ -166,12 +166,16 @@ void PBD_GnssObservation::ClearPreValues(GnssObservedValues& values)
   values.ionfree_pseudo_range.clear();
 };
 
-double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock) const
+double PBD_GnssObservation::CalculatePseudoRange(const int gnss_sat_id, const libra::Vector<3> sat_position, const double sat_clock) const
 {
+  // この情報もテーブルとして持っておけば無駄がない．
+  const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
+  double gnss_clock = observed_values_.gnss_clock.at(index);
+
   double range = 0.0;
   // 推定するときはここにアライメント誤差の推定量も混ぜる．
   libra::Vector<3> receive_position = receiver_->GetCodeReceivePositionDesignECI(sat_position);
-  range = CalculateGeometricRange(receive_position, gnss_position);
+  range = CalculateGeometricRange(gnss_sat_id, receive_position);
 
   // clock offsetの分を追加
   range += sat_clock - gnss_clock; // 電離層はフリーにしている．
@@ -179,12 +183,15 @@ double PBD_GnssObservation::CalculatePseudoRange(const libra::Vector<3> sat_posi
   return range;
 }
 
-double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position,
-  const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda, const double pcc) const
+double PBD_GnssObservation::CalculateCarrierPhase(const int gnss_sat_id, const libra::Vector<3> sat_position,
+        const double sat_clock, const double integer_bias, const double lambda, const double pcc) const
 {
+  const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
+  double gnss_clock = observed_values_.gnss_clock.at(index);
+
   double range = 0.0;
   libra::Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
-  range = CalculateGeometricRange(receive_position, gnss_position);
+  range = CalculateGeometricRange(gnss_sat_id, receive_position);
 
   range += sat_clock - gnss_clock;
   range += lambda * integer_bias; // ここも電離圏は入れてない．
@@ -193,8 +200,11 @@ double PBD_GnssObservation::CalculateCarrierPhase(const libra::Vector<3> sat_pos
   return range; // 位相観測量に変換（単位は[m]）
 }
 
-double PBD_GnssObservation::CalculateGeometricRange(const libra::Vector<3> rec_position, libra::Vector<3> gnss_position) const
+double PBD_GnssObservation::CalculateGeometricRange(const int gnss_sat_id, const libra::Vector<3> rec_position) const
 {
+  const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
+  auto gnss_position = observed_values_.gnss_satellites_position.at(index);
+
   double range = 0.0;
   for (int i = 0; i < 3; ++i) {
     range += pow(rec_position[i] - gnss_position[i], 2.0);

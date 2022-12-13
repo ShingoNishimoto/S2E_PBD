@@ -57,9 +57,9 @@ public:
   void UpdateGnssObservation();
   void UpdateInfoAfterObserved();
 
-  double CalculatePseudoRange(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock) const;
-  double CalculateCarrierPhase(const libra::Vector<3> sat_position, const libra::Vector<3> gnss_position, const double sat_clock, const double gnss_clock, const double integer_bias, const double lambda, const double pcc) const;
-  double CalculateGeometricRange(const libra::Vector<3> rec_position, libra::Vector<3> gnss_position) const;
+  double CalculatePseudoRange(const int gnss_sat_id, const libra::Vector<3> sat_position, const double sat_clock) const;
+  double CalculateCarrierPhase(const int gnss_sat_id, const libra::Vector<3> sat_position, const double sat_clock, const double integer_bias, const double lambda, const double pcc) const;
+  double CalculateGeometricRange(const int gnss_sat_id, const libra::Vector<3> rec_position) const;
   double CalculateIonDelay(const int gnss_id, const libra::Vector<3> rec_position, const double frequency) const; // GnssSatelliteとflag以外はIFをそろえている．
 
   // ここら辺を介す構成はやめたい．
@@ -70,7 +70,8 @@ public:
   inline const int GetPreVisibleGnssNum(void) const {return info_.pre_observed_gnss_sat_id.size();}
   inline const double GetGnssElevationDeg(const int ch) const {return receiver_->GetGnssInfo(ch).latitude * libra::rad_to_deg;}
   inline const double GetGnssAzimuthDeg(const int ch) const {return receiver_->GetGnssInfo(ch).longitude * libra::rad_to_deg;}
-  const libra::Vector<3> GetGnssDirection(const int ch) const;
+  const libra::Vector<3> GetGnssDirection_c(const int ch) const;
+  inline const libra::Vector<3> GetGnssDirection_i(const int ch) { return receiver_->TransCompoToEci(GetGnssDirection_c(ch)); }
   inline const PBD_GNSSReceiver* GetReceiver(void) const { return receiver_; }
 
   GnssObservedValues true_values_; // trueは要らんかも

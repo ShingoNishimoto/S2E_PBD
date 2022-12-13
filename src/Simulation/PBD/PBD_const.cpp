@@ -44,7 +44,8 @@ const double earth_radius_spice_mean = 6371000.3852496156;
 // const double Earth_Radius = earth_radius_spice_mean;
 const double Earth_Radius = environment::earth_equatorial_radius_m; //m
 
-const double tau_a = 900 * 2;
+// t -> 0, sigma -> inf: kinematic, t -> inf, sigma -> 0: dynamic
+const double tau_a = 900 * 0.1;
 const double tau_cdt = 100;
 
 // for Adaptive Kalman Filter
