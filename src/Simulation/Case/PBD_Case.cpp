@@ -80,7 +80,7 @@ void PBD_Case::Main()
     // Debug output
     if (glo_env_->GetSimTime().GetState().disp_output)
     {
-      std::cout << "Progresss: " << glo_env_->GetSimTime().GetProgressionRate() << "%\r";
+      std::cout << "Progress: " << glo_env_->GetSimTime().GetProgressionRate() << "%\r";
     }
   }
 }

@@ -27,14 +27,15 @@ public:
   inline const Vector<3> GetAntennaPositionTrueECI(void) const { return arp_eci_.true_pos_; }
   // Carrier Phase
   const Vector<3> GetPhaseReceivePositionTrueECI(void);
-  inline const Vector<3> GetPhaseReceivePositionDesignECI(void) const {return phase_receive_position_eci_.design_pos_;}
+  // inline const Vector<3> GetPhaseReceivePositionDesignECI(void) const {return phase_receive_position_eci_.design_pos_;}
   const Vector<3> GetPhaseReceivePositionDesignECI(const libra::Vector<3> sat_position) const;
   // inline const Vector<3> GetPhaseReceivePositionECEF(void) const { return phase_receive_position_ecef_; }
   // Pseudo Range
   const Vector<3> GetCodeReceivePositionTrueECI(void);
-  inline const Vector<3> GetCodeReceivePositionDesignECI(void) const { return code_receive_position_eci_.design_pos_; }
+  // inline const Vector<3> GetCodeReceivePositionDesignECI(void) const { return code_receive_position_eci_.design_pos_; }
   const Vector<3> GetCodeReceivePositionDesignECI(const libra::Vector<3> sat_position) const;
   // inline const Vector<3> GetCodeReceivePositionECEF(void) const { return code_receive_position_ecef_; }
+  libra::Vector<3> TransCompoToEci(const libra::Vector<3>& target_vec_c);
 
   // Alignment Error
   inline const Vector<3> GetAlignmentError(void) const { return alignment_err_b_; }

@@ -17,6 +17,7 @@ PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_ge
                nrs_antenna_b_x_(0.0, alignment_err_std[0], g_rand.MakeSeed()),
                nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
                nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
+              //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
                pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
 {
 #ifdef FIXED_ALIGNMENT
@@ -187,11 +188,6 @@ void PBD_GNSSReceiver::UpdateReceivePosition(Quaternion q_i2b)
 {
   Vector<3> gnss_sat_pos_i, sat2ant_design_i, sat2ant_true_i;
 
-  // antenna normal vector at inertial frame
-  Vector<3> antenna_direction_c = (1 / libra::norm(antenna_position_b_)) * antenna_position_b_;
-  Vector<3> antenna_direction_b = q_b2c_.frame_conv_inv(antenna_direction_c);
-  Vector<3> antenna_direction_i = q_i2b.frame_conv_inv(antenna_direction_b);
-
   sat2ant_design_i = q_i2b.frame_conv_inv(antenna_position_b_);
   sat2ant_true_i = sat2ant_design_i + q_i2b.frame_conv_inv(alignment_err_b_);
   arp_eci_.design_pos_ = position_eci_ + sat2ant_design_i;
@@ -247,6 +243,15 @@ const Vector<3> PBD_GNSSReceiver::GetCodeReceivePositionDesignECI(const libra::V
   return receive_position_i;
 }
 
+Vector<3> PBD_GNSSReceiver::TransCompoToEci(const Vector<3>& target_vec_c)
+{
+  Vector<3> target_vec_b = q_b2c_.frame_conv_inv(target_vec_c);
+  Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
+  Vector<3> target_vec_i = q_i2b.frame_conv_inv(target_vec_b);
+  return target_vec_i;
+}
+
+
 PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(const int ch)
 {
   const int gnss_sat_id = gnss_satellites_->GetIndexFromID(vec_gnssinfo_.at(ch).ID); // idとindexの定義を混同しないように整理する．
@@ -266,7 +271,7 @@ PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(
   const double elevation_deg = vec_gnssinfo_.at(ch).latitude * libra::rad_to_deg;
   const double pcc = pcc_.GetPCC_m(azimuth_deg, elevation_deg);
   l1_carrier_phase.first += pcc / L1_lambda;
-  l2_carrier_phase.first += pcc / L2_lambda; // L2は違うが使用してないので．
+  l2_carrier_phase.first += pcc / L2_lambda; // L2はPCCが違うが使用してないので．
 
   // add measurement error
   std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);

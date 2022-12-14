@@ -100,7 +100,7 @@ private:
   std::vector<int> common_observed_gnss_sat_id{};
 
   // air drag ballistic coefficient
-  const double Cd = 2.928e-14; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．
+  const double Cd = 2.928e-14 / 5; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．これも推定した方がいい気はする．
 
   Eigen::MatrixXd P_;
   Eigen::MatrixXd Phi_;
@@ -149,6 +149,7 @@ private:
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
   Eigen::Vector3d ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
+  void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv);
 
   // PCO, PCV関連
   void EstimateDeltaPCO(const std::vector<double> sdcp_vec);

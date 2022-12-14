@@ -16,7 +16,7 @@ class PhaseCenterCorrection
   void PccLogOutput(void);
 
   // template <typename T, size_t N>
-  void DpcoInitialEstimation(Eigen::MatrixXd H, Eigen::VectorXd V_Res);
+  void DpcoInitialEstimation(const Eigen::MatrixXd& H, const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W);
 
  protected:
   std::map<int, int> azimuth_index_;   // azimuth角を入力としたindex取得用辞書
@@ -26,6 +26,9 @@ class PhaseCenterCorrection
   libra::Vector<3> pco_mm_;    // 3次元ベクトル
   std::vector<double> pcv_mm_; // grid pointを保持
 
+  // PCVモデルとして複数試すなら，抽象クラスをつくってそれを継承させるのがいいかもしれない？
+
   Eigen::VectorXd V_Res_dpco_;
   Eigen::MatrixXd H_dpco_;
+  Eigen::MatrixXd W_dpco_;
 };

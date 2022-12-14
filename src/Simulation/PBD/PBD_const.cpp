@@ -12,23 +12,23 @@ const double L2_lambda = environment::speed_of_light_m_s*1e-6/L2_frequency; //[m
 // A-priori standard deviation
 const double sigma_r_ini     = 100;   //[m]
 const double sigma_v_ini     = 1.0;  //[m/s]
-const double sigma_acc_r_ini =  75*1e2; //[nm/s^2]
-const double sigma_acc_t_ini = 100*1e2; //[nm/s^2]
-const double sigma_acc_n_ini =  50*1e2;  //[nm/s^2]
+const double sigma_acc_r_ini = 1500; //[nm/s^2]
+const double sigma_acc_t_ini = 1500; //[nm/s^2]
+const double sigma_acc_n_ini = 1500;  //[nm/s^2]
 const double sigma_cdt_ini   = 100;    //[m]
 const double sigma_N_ini     = 10;   //[cycle] これももう少し現実にそった値にする．
-// observation noise
-// const double pseudo_sigma    = 1.0 / 3.0; //[m]
-// const double carrier_sigma   = 5.0 * 1e-3 / 3.0; //[m]
+// observation noise <- phoenix
+const double pseudo_sigma    = 0.25; //[m]
+const double carrier_sigma   = 5.0 * 1e-3; //[m]
 // for SILVIA
-const double pseudo_sigma    = 2.0 / 3; //[m]
-const double carrier_sigma   = 4.0 * 1e-3 / 3; //[m]
+// const double pseudo_sigma    = 2.0 / 3; //[m]
+// const double carrier_sigma   = 4.0 * 1e-3 / 3; //[m]
 // process noise
 const double sigma_r_process = 0.001;    //[m]
 const double sigma_v_process = 5 * 1e-4;   //[m/s]
-const double sigma_acc_r_process = 50*1e2; // 7500;   //[nm/s^2]
-const double sigma_acc_t_process = 80*1e2; // 1000;   //[nm/s^2]
-const double sigma_acc_n_process = 40*1e2; // 500;    //[nm/s^2]
+const double sigma_acc_r_process = 1000*3; // 7500;   //[nm/s^2]
+const double sigma_acc_t_process =  800*3; // 1000;   //[nm/s^2]
+const double sigma_acc_n_process = 1000*3; // 500;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
 const double sigma_cdt_process   = 1.0; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
@@ -44,7 +44,8 @@ const double earth_radius_spice_mean = 6371000.3852496156;
 // const double Earth_Radius = earth_radius_spice_mean;
 const double Earth_Radius = environment::earth_equatorial_radius_m; //m
 
-const double tau_a = 900;
+// t -> 0, sigma -> inf: kinematic, t -> inf, sigma -> 0: dynamic
+const double tau_a = 900 * 0.1;
 const double tau_cdt = 100;
 
 // for Adaptive Kalman Filter
