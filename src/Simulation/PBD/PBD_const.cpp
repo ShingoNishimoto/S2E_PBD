@@ -26,9 +26,9 @@ const double carrier_sigma   = 5.0 * 1e-3; //[m]
 // process noise
 const double sigma_r_process = 0.001;    //[m]
 const double sigma_v_process = 5 * 1e-4;   //[m/s]
-const double sigma_acc_r_process = 1000; // 7500;   //[nm/s^2]
-const double sigma_acc_t_process = 800; // 1000;   //[nm/s^2]
-const double sigma_acc_n_process = 1000; // 500;    //[nm/s^2]
+const double sigma_acc_r_process = 1000*3; // 7500;   //[nm/s^2]
+const double sigma_acc_t_process =  800*3; // 1000;   //[nm/s^2]
+const double sigma_acc_n_process = 1000*3; // 500;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
 const double sigma_cdt_process   = 1.0; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
