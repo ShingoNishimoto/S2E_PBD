@@ -17,8 +17,8 @@ PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_ge
                nrs_antenna_b_x_(0.0, alignment_err_std[0], g_rand.MakeSeed()),
                nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
                nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
-              //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
                pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
+              //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
 {
 #ifdef FIXED_ALIGNMENT
 // stdではなくて，固定誤差として与えてあげる．
@@ -243,11 +243,10 @@ const Vector<3> PBD_GNSSReceiver::GetCodeReceivePositionDesignECI(const libra::V
   return receive_position_i;
 }
 
-Vector<3> PBD_GNSSReceiver::TransCompoToEci(const Vector<3>& target_vec_c)
+const Vector<3> PBD_GNSSReceiver::TransCompoToEci(const Vector<3>& target_vec_c)
 {
-  Vector<3> target_vec_b = q_b2c_.frame_conv_inv(target_vec_c);
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
-  Vector<3> target_vec_i = q_i2b.frame_conv_inv(target_vec_b);
+  Vector<3> target_vec_i = q_i2b.frame_conv_inv(TransCompoToBody(target_vec_c));
   return target_vec_i;
 }
 

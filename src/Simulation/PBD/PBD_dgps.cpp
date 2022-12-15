@@ -48,7 +48,6 @@ static const int precision = 15; // position
 // template <typename T> static void LogOutput(const )
 static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int size, const int max_size);
 
-// outputを変えるときは"result.csv"を変更する．せめてパスは変えたい．
 PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), geo_potential_(geop)
 {
   //初期化
@@ -75,12 +74,12 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
-  x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
+  libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
+  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5);
+  // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   // x_est_.push_back(x_est_main);
   // x_est_.push_back(x_est_target);
-  // true_N_main = Eigen::VectorXd::Zero(NUM_GNSS_CH);
-  // true_N_target = Eigen::VectorXd::Zero(NUM_GNSS_CH);
   sat_info_.push_back({main_dynamics, x_est_main, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(0)->pbd_components_});
   sat_info_.push_back({target_dynamics, x_est_target, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(1)->pbd_components_});
 
@@ -861,15 +860,20 @@ void PBD_dgps::KalmanFilter()
 
   // innovationの記号を何にするかは要検討
   Eigen::VectorXd E_pre = z - h_x;
-  // まずアンテナ位置に変換
+
   Eigen::VectorXd x_ant_predict = x_predict;
+#ifndef RANGE_OBSERVE_DEBUG
+  // まずアンテナ位置に変換
   x_ant_predict.topRows(3) = ConvCenterOfMassToReceivePos(x_predict.topRows(3), antenna_pos_b_.at(0), sat_info_.at(0).dynamics);
   x_ant_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvCenterOfMassToReceivePos(x_predict.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), sat_info_.at(1).dynamics);
+#endif // RANGE_OBSERVE_DEBUG
   Eigen::VectorXd x_update = x_ant_predict + K * E_pre;
   // Eigen::VectorXd x_update = x_predict + K * E_pre;
+#ifndef RANGE_OBSERVE_DEBUG
   // 重心位置に戻す．
   x_update.topRows(3) = ConvReceivePosToCenterOfMass(x_update.topRows(3), antenna_pos_b_.at(0), sat_info_.at(0).dynamics);
   x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1) = ConvReceivePosToCenterOfMass(x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, 3, 1), antenna_pos_b_.at(1), sat_info_.at(1).dynamics);
+#endif // RANGE_OBSERVE_DEBUG
 
   //更新
   GetStateFromVector(num_main_state_all, x_update); // N以外を代入
@@ -971,7 +975,8 @@ void PBD_dgps::KalmanFilter()
       if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
           std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == n_target)
       {
-        EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+        // 推定完了したら実施しない．
+        if (!x_est_target.pcc->GetPcoFixed()) EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
       }
 #endif // PCO
 
@@ -1093,8 +1098,8 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   libra::Vector<3> sat_position = ConvEigenVecToLibraVec<3>(x_est.position);
   const double sat_clock = x_est.clock(0);
   // ここら辺はGnssObserveModel内に格納する．
-  libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
-  double geometric_range = gnss_observation.CalculateGeometricRange(gnss_sat_id, receive_pos);
+  // libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
+  double geometric_range = gnss_observation.CalculateGeometricRange(gnss_sat_id, sat_position);
   observe_model.geometric_range.push_back(geometric_range);
   if (observe_model.geometric_range.size() != (index + 1)) abort();
 

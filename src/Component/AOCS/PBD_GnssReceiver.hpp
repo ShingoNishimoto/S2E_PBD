@@ -35,7 +35,8 @@ public:
   // inline const Vector<3> GetCodeReceivePositionDesignECI(void) const { return code_receive_position_eci_.design_pos_; }
   const Vector<3> GetCodeReceivePositionDesignECI(const libra::Vector<3> sat_position) const;
   // inline const Vector<3> GetCodeReceivePositionECEF(void) const { return code_receive_position_ecef_; }
-  libra::Vector<3> TransCompoToEci(const libra::Vector<3>& target_vec_c);
+  inline const Vector<3> TransCompoToBody(const Vector<3>& target_vec_c) { return q_b2c_.frame_conv_inv(target_vec_c); }
+  const Vector<3> TransCompoToEci(const Vector<3>& target_vec_c);
 
   // Alignment Error
   inline const Vector<3> GetAlignmentError(void) const { return alignment_err_b_; }
