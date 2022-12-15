@@ -7,7 +7,7 @@
 // #define DISTANCE_BASED_INTERPOLATION
 #define PIECEWISE_FUNCTION
 
-#define WLS_DATA_NUM (1 * 11)
+#define PCO_WLS_DATA_NUM (1 * 11)
 
 // PCOは左手系(north, east, up)で定義されている．左手系なのでazimuthは時計まわり．これに合うように要修正！
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
@@ -41,6 +41,8 @@ azi_increment_(azi_increment), ele_increment_(ele_increment)
   const int num_ele = (int)(90 / ele_increment) + 1;
   pcv_mm_.assign(num_azi*num_ele, 0.0); // 0埋め
 }
+
+PhaseCenterCorrection::~PhaseCenterCorrection(){}
 
 void PhaseCenterCorrection::PccLogOutput(void)
 {
@@ -116,10 +118,12 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
   return pcc;
 }
 
+// ここはPCOEstimationクラスとして別だしした方がいいかも
 // template <typename T, size_t N>
 void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W)
 {
   static int epoch_count = 0;
+  const double ddcp_res_thresh = 1e-4;
 
   const int N = V_Res.rows();
   const int current_size = V_Res_dpco_.rows();
@@ -140,7 +144,7 @@ void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, cons
   // std::cout << "W" << W_dpco_ << std::endl;
 
   epoch_count++;
-  if (new_size >= WLS_DATA_NUM)
+  if (new_size >= PCO_WLS_DATA_NUM)
   {
     Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(W_dpco_);
     auto rank = lu_decomp.rank(); // なんかうまく計算できてなさそう．<- Wがでかすぎると行列式が0になる可能性はある．Diagonalが<1なので．
@@ -171,6 +175,11 @@ void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, cons
       libra::Vector<3> dpco_mm(0);
       for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
       UpdatePCO(dpco_mm);
+      // 大体0.1mm以下の精度になったら収束判定をする．
+      if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
+      {
+        pco_fixed_ = true;
+      }
     }
 
     // リセット

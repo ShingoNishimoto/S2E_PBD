@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../../Library/VectorTool.hpp"
+#include "PCVEstimation.hpp"
 #include <map>
 
 class PhaseCenterCorrection
@@ -8,12 +8,14 @@ class PhaseCenterCorrection
  public:
   PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment);
   PhaseCenterCorrection(libra::Vector<3> pco, const double azi_increment, const double ele_increment);
+  ~PhaseCenterCorrection();
 
   const double GetPCC_m(const double azimuth_deg, const double elevation_deg);
   inline libra::Vector<3> GetPCO_mm(void) const { return pco_mm_; };
   inline void UpdatePCO(const libra::Vector<3> dpco_mm) { pco_mm_ += dpco_mm; };
   inline void SetPCO(const libra::Vector<3> pco_mm) { pco_mm_ = pco_mm; };
   void PccLogOutput(void);
+  const bool GetPcoFixed(void) const { return pco_fixed_; }
 
   // template <typename T, size_t N>
   void DpcoInitialEstimation(const Eigen::MatrixXd& H, const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W);
@@ -25,6 +27,9 @@ class PhaseCenterCorrection
   const double ele_increment_;
   libra::Vector<3> pco_mm_;    // 3次元ベクトル
   std::vector<double> pcv_mm_; // grid pointを保持
+
+  bool pco_fixed_ = false;
+  // PCVEstimation pcv_estimation_;
 
   // PCVモデルとして複数試すなら，抽象クラスをつくってそれを継承させるのがいいかもしれない？
 
