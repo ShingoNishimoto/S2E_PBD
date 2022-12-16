@@ -7,8 +7,6 @@
 // #define DISTANCE_BASED_INTERPOLATION
 #define PIECEWISE_FUNCTION
 
-#define PCO_WLS_DATA_NUM (1 * 11)
-
 // PCOは左手系(north, east, up)で定義されている．左手系なのでazimuthは時計まわり．これに合うように要修正！
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
 azi_increment_(azi_increment), ele_increment_(ele_increment)
@@ -30,12 +28,13 @@ azi_increment_(azi_increment), ele_increment_(ele_increment)
     elevation_index_[elevation] = i;
   }
 
-  PccLogOutput();
+  PccLogOutput("phase_center_correction.csv");
 }
 
 // pcoだけを指定する場合．推定用．
-PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, const double azi_increment, const double ele_increment): pco_mm_(pco),
-azi_increment_(azi_increment), ele_increment_(ele_increment)
+PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, const double azi_increment, const double ele_increment, const std::string out_fname_base): pco_mm_(pco),
+azi_increment_(azi_increment), ele_increment_(ele_increment),
+out_fname_base_(out_fname_base)
 {
   const int num_azi = (int)(360 / azi_increment) + 1;
   const int num_ele = (int)(90 / ele_increment) + 1;
@@ -44,9 +43,17 @@ azi_increment_(azi_increment), ele_increment_(ele_increment)
 
 PhaseCenterCorrection::~PhaseCenterCorrection(){}
 
-void PhaseCenterCorrection::PccLogOutput(void)
+void PhaseCenterCorrection::UpdatePCV(const std::vector<double> dpcv_mm)
 {
-  std::ofstream ofs_("phase_center_correction.csv"); // ここはアンテナごとに指定したい．
+  for (int i = 0; i < dpcv_mm.size(); i++)
+  {
+    pcv_mm_.at(i) += dpcv_mm.at(i);
+  }
+}
+
+void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
+{
+  std::ofstream ofs_(out_fname); // ここはアンテナごとに指定したい．
   const int precision = 5;
 
   for (int i = 0; i < 3; i++)
@@ -116,76 +123,4 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
   pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv;
   pcc /= 1000; // mに変換
   return pcc;
-}
-
-// ここはPCOEstimationクラスとして別だしした方がいいかも
-// template <typename T, size_t N>
-void PhaseCenterCorrection::DpcoInitialEstimation(const Eigen::MatrixXd& H, const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W)
-{
-  static int epoch_count = 0;
-  const double ddcp_res_thresh = 1e-4;
-
-  const int N = V_Res.rows();
-  const int current_size = V_Res_dpco_.rows();
-  const int new_size = current_size + N;
-  H_dpco_.conservativeResize(new_size, 3);
-  V_Res_dpco_.conservativeResize(new_size);
-  Eigen::MatrixXd W_cpy = W_dpco_;
-  W_dpco_ = Eigen::MatrixXd::Zero(new_size, new_size);
-
-  // append new matrix and observations
-  H_dpco_.block(current_size, 0, N, 3) = H;
-  V_Res_dpco_.block(current_size, 0, N, 1) = V_Res;
-  W_dpco_.topLeftCorner(current_size, current_size) = W_cpy;
-  W_dpco_.block(current_size, current_size, N, N) = W;
-
-  // std::cout << "H" << H_dpco_ << std::endl;
-  // std::cout << "V" << V_Res_dpco_ << std::endl;
-  // std::cout << "W" << W_dpco_ << std::endl;
-
-  epoch_count++;
-  if (new_size >= PCO_WLS_DATA_NUM)
-  {
-    Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(W_dpco_);
-    auto rank = lu_decomp.rank(); // なんかうまく計算できてなさそう．<- Wがでかすぎると行列式が0になる可能性はある．Diagonalが<1なので．
-    // if (rank < W_dpco_.rows()) abort(); // 正則判定．
-
-    Eigen::Vector3d dpco = - (H_dpco_.transpose() * W_dpco_ * H_dpco_).inverse() * (H_dpco_.transpose() * W_dpco_ * V_Res_dpco_); // 3次元
-
-// debug ++++++++++++++++++++++++++++++++++++++++++++++++
-    Eigen::VectorXd dd_pcc_after = - H_dpco_ * dpco;
-    // std::cout << "H dpco" << H_dpco_ << std::endl;
-    // std::cout << "after estimated ddpcc" << dd_pcc_after << std::endl;
-    // std::cout << "raw ddpcc" << V_Res_dpco_ << std::endl;
-    double pre_acc = 0;
-    for (int i = 0; i < V_Res_dpco_.rows(); i++) pre_acc += pow(V_Res_dpco_(i), 2.0);
-    pre_acc = sqrt(pre_acc) / V_Res_dpco_.rows(); // RMS
-    // std::cout << "pre accuracy" << pre_acc << std::endl;
-
-    Eigen::VectorXd post_res = V_Res_dpco_ - dd_pcc_after;
-    double post_acc = 0;
-    for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
-    post_acc = sqrt(post_acc) / post_res.rows();
-    // std::cout << "post accuracy" << post_acc << std::endl;
-// +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-    // 改善した時だけ更新する．
-    if (pre_acc > post_acc)
-    {
-      libra::Vector<3> dpco_mm(0);
-      for (int i = 0; i < 3; i++) dpco_mm[i] = dpco(i) * 1000;
-      UpdatePCO(dpco_mm);
-      // 大体0.1mm以下の精度になったら収束判定をする．
-      if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
-      {
-        pco_fixed_ = true;
-      }
-    }
-
-    // リセット
-    V_Res_dpco_.resize(0);
-    H_dpco_.resize(0, 0);
-    W_dpco_.resize(0, 0);
-    epoch_count = 0;
-  }
 }

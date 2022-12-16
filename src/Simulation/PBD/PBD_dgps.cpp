@@ -35,7 +35,7 @@
 // #define N_DEBUG
 // #define TIME_UPDATE_DEBUG
 
-#define PCO
+#define PCC
 
 #define LAMBDA_DEBUG
 
@@ -62,7 +62,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
   const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
-  x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
+  x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
 
   x_est_target.position = Eigen::VectorXd::Zero(3);
   const Dynamics& target_dynamics = spacecrafts.at(1)->GetDynamics();
@@ -75,8 +75,10 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
   libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
-  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5);
+  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_pcv");
   // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
+
+  pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
 
   // x_est_.push_back(x_est_main);
   // x_est_.push_back(x_est_target);
@@ -969,16 +971,16 @@ void PBD_dgps::KalmanFilter()
         // Q_.block(num_main_state_all + NUM_SINGLE_STATE, num_main_state_all + NUM_SINGLE_STATE, n_target, n_target) = Eigen::MatrixXd::Zero(n_target, n_target);
       }
 
-// PCOの推定．
-#ifdef PCO
+// PCO, PCVの推定．
+#ifdef PCC
       // 全部fixしているときに限定する．
       if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == n_main &&
           std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == n_target)
       {
         // 推定完了したら実施しない．
-        if (!x_est_target.pcc->GetPcoFixed()) EstimateDeltaPCO(ConvEigenVecToStdVec(z.bottomRows(n_common)));
+        if (!pcc_estimate_.GetEstimationFinish()) EstimateRelativePCC(ConvEigenVecToStdVec(z.bottomRows(n_common)));
       }
-#endif // PCO
+#endif // PCC
 
     }
   }
@@ -1464,7 +1466,7 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
 }
 
 // クラスが肥大化してしまっているので分割したい．
-void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
+void PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
 {
   const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   const std::vector<GnssInfo> main_vec_gnssinfo = main_observation.GetReceiver()->GetGnssInfoVec();
@@ -1477,17 +1479,16 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
 
   x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
 
-  double max_elevation = 0;
   int ref_gnss_ch;
   const int visible_ch_num = common_observed_gnss_sat_id.size();
   Eigen::VectorXd h_sdcp = Eigen::VectorXd::Zero(visible_ch_num);
   Eigen::MatrixXd R_sdcp = R_.bottomRightCorner(visible_ch_num, visible_ch_num);
   Eigen::VectorXd Rv_sdcp(visible_ch_num);
-  // 低仰角時におけるPCVの影響を小さくするためにelevationに閾値を設けることにする．
-  const double ele_thresh_deg = 30; // deg
+
   int count = 0;
   std::vector<double> sdcp_raw;
   std::vector<int> gnss_ids;
+  pcc_estimate_.InitializeRefInfo();
   for (int ch = 0; ch < visible_ch_num; ch++)
   {
     const int gnss_id = common_observed_gnss_sat_id.at(ch);
@@ -1495,7 +1496,7 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
     const int target_ch = GetIndexOfStdVector<int>(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
 
     double main_elevation_deg = main_observation.GetGnssElevationDeg(main_ch);
-    if (main_elevation_deg < ele_thresh_deg) continue;
+    if (!pcc_estimate_.CheckDataForEstimation(count, ref_gnss_ch, main_elevation_deg, R_sdcp(ch, ch))) continue;
 
     const double pcc_main = x_est_main.pcc->GetPCC_m(main_observation.GetGnssAzimuthDeg(main_ch), main_elevation_deg);
     const double carrier_phase_main = main_observation.CalculateCarrierPhase(gnss_id, ConvEigenVecToLibraVec<3>(x_est_main.position), x_est_main.clock(0), x_est_main.ambiguity.N.at(main_ch), L1_lambda, pcc_main);
@@ -1508,12 +1509,6 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
     gnss_ids.push_back(gnss_id);
     Rv_sdcp(count) = R_sdcp(ch, ch);
 
-  // 視線方向が重要であることを考えて仰角最大の衛星を参照にする．
-    if (main_elevation_deg > max_elevation)
-    {
-      max_elevation = main_elevation_deg;
-      ref_gnss_ch = count;
-    }
     count++;
   }
 
@@ -1524,7 +1519,8 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
   R_sdcp = Rv_sdcp.asDiagonal();
   Eigen::MatrixXd M_dd = Eigen::MatrixXd::Zero(count - 1, count);
   Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
-  Eigen::MatrixXd H = Eigen::MatrixXd::Zero(count - 1, 3);
+  // Eigen::MatrixXd H = Eigen::MatrixXd::Zero(count - 1, 3);
+  pcc_estimate_.ResizeH(count);
   int ddcp_ch_offset = 0;
   for (int ch = 0; ch < count; ch++)
   {
@@ -1545,10 +1541,10 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
     // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainのものを考える．
     const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
     const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
-    const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
 
-    for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
-    // H.block(ch, 0, 1, 3) = ConvLibraVecToEigenVec(h);
+    pcc_estimate_.SetHRaw(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation);
+    // const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
+    // for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
   }
   Eigen::MatrixXd R_ddcp = M_dd * R_sdcp * M_dd.transpose();
 
@@ -1565,8 +1561,8 @@ void PBD_dgps::EstimateDeltaPCO(const std::vector<double> sdcp_vec)
   }
   // std::cout << "W" << W << std::endl;
 
-  // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
-  x_est_target.pcc->DpcoInitialEstimation(H, res_ddcp, W);
+  W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
+  pcc_estimate_.Update(res_ddcp, W);
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state)
