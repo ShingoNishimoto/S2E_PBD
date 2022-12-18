@@ -51,12 +51,16 @@ void PCCEstimation::InitializeRefInfo(void)
   pcv_estimate_.min_variance_ = 1e18;
 }
 
-void PCCEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W)
+const bool PCCEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W)
 {
   if (!pco_estimate_.GetPcoFixed())
   {
     // ここで更新する．
-    if (pco_estimate_.DpcoInitialEstimation(V, W)) pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
+    if (pco_estimate_.DpcoInitialEstimation(V, W))
+    {
+      pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
+      return true;
+    }
   }
   else if (!pcv_estimate_.GetPcvFixed())
   {
@@ -64,8 +68,11 @@ void PCCEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W)
     {
       pcc_->UpdatePCV(pcv_estimate_.dpcv_vec_mm_);
       pcc_->PccLogOutput(pcc_->out_fname_base_ + ".csv"); // ステップごとに保存できるようにしたい．
+      return true;
     }
   }
   else std::cout << "ERROR: something wrong" << std::endl;
+
+  return false;
 }
 
