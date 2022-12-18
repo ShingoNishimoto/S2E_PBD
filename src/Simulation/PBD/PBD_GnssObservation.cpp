@@ -39,7 +39,7 @@ void PBD_GnssObservation::UpdateGnssObservation()
   num_of_gnss_satellites_ = gnss_satellites_.GetNumOfSatellites(); // 時刻によって利用可能衛星数が変化するので更新
   // ここでMainRoutineを呼べばいいだけではあった．constのままでしたいな．
 
-  const libra::Vector<3> antenna_position_i = receiver_->GetAntennaPositionTrueECI(); // ECI
+  const Vector<3> antenna_position_i = receiver_->GetAntennaPositionTrueECI(); // ECI
 
   info_.now_observed_status.assign(num_of_gnss_satellites_, false);
   info_.now_observed_gnss_sat_id.clear(); //クリア
@@ -62,8 +62,23 @@ void PBD_GnssObservation::UpdateGnssObservation()
     auto l1_carrier_phase  = raw_observation.l1_carrier_phase;
     auto l2_carrier_phase  = raw_observation.l2_carrier_phase;
 
+// 受信機クラスでやってしまってもいい気はするが，受信機からは生のデータを得るというのが基本的な考えな気がするのでここで実施．
+#ifdef RANGE_OBSERVE_DEBUG
+    // ここで重心位置までの位置への変換は衛星側の処理として実施するので実際の値はわからず，設計値で変換する．
+    const double range_com_to_arp = GetRangeComToArpDesign(ch);
+    l1_pseudo_range += range_com_to_arp;
+    l2_pseudo_range += range_com_to_arp;
+    l1_carrier_phase.first += range_com_to_arp / L1_lambda;
+    l2_carrier_phase.first += range_com_to_arp / L2_lambda;
+#endif // RANGE_OBSERVE_DEBUG
+
+    observed_values_.L1_pseudo_range.push_back(l1_pseudo_range);
+    observed_values_.L2_pseudo_range.push_back(l2_pseudo_range);
+    observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
+    observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
+
     // true info
-    libra::Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
+    Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias
     // estimateに使う方の情報
     gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_sat_id);
@@ -72,11 +87,6 @@ void PBD_GnssObservation::UpdateGnssObservation()
     observed_values_.observable_gnss_sat_id.push_back(gnss_sat_id);
     observed_values_.gnss_satellites_position.push_back(gnss_position);
     observed_values_.gnss_clock.push_back(gnss_clock);
-    observed_values_.L1_pseudo_range.push_back(l1_pseudo_range);
-    observed_values_.L2_pseudo_range.push_back(l2_pseudo_range);
-    // 一旦真の値を入れる．
-    observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
-    observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
   }
 }
 
@@ -120,21 +130,13 @@ void PBD_GnssObservation::ProcessGnssObservations(void)
   }
 }
 
-const libra::Vector<3> PBD_GnssObservation::GetGnssDirection_c(const int ch) const
+const Vector<3> PBD_GnssObservation::GetGnssDirection_c(const int ch) const
 {
   const double azi_rad = receiver_->GetGnssInfo(ch).longitude;
   const double ele_rad = receiver_->GetGnssInfo(ch).latitude;
-  libra::Vector<3> e(0);
+  Vector<3> e(0);
   e[0] = cos(ele_rad) * cos(azi_rad); e[1] = cos(ele_rad) * sin(azi_rad); e[2] = sin(ele_rad);
   return e;
-}
-
-bool PBD_GnssObservation::CheckCanSeeSatellite(const libra::Vector<3> satellite_position, const libra::Vector<3> gnss_position) const
-{
-  // ここには姿勢の要素も入れなければいけない．
-  double angle_rad = angle(satellite_position, gnss_position - satellite_position);
-  if (angle_rad < M_PI / 2.0 - mask_angle) return true;
-  else return false;
 }
 
 // この関数は外部で呼ばれて，内部が変更される
@@ -166,7 +168,7 @@ void PBD_GnssObservation::ClearPreValues(GnssObservedValues& values)
   values.ionfree_pseudo_range.clear();
 };
 
-double PBD_GnssObservation::CalculatePseudoRange(const int gnss_sat_id, const libra::Vector<3> sat_position, const double sat_clock) const
+double PBD_GnssObservation::CalculatePseudoRange(const int gnss_sat_id, const Vector<3> sat_position, const double sat_clock) const
 {
   // この情報もテーブルとして持っておけば無駄がない．
   const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
@@ -174,33 +176,41 @@ double PBD_GnssObservation::CalculatePseudoRange(const int gnss_sat_id, const li
 
   double range = 0.0;
   // 推定するときはここにアライメント誤差の推定量も混ぜる．
-  libra::Vector<3> receive_position = receiver_->GetCodeReceivePositionDesignECI(sat_position);
+  Vector<3> receive_position = receiver_->GetCodeReceivePositionDesignECI(sat_position);
   range = CalculateGeometricRange(gnss_sat_id, receive_position);
 
   // clock offsetの分を追加
   range += sat_clock - gnss_clock; // 電離層はフリーにしている．
 
+#ifdef RANGE_OBSERVE_DEBUG
+  range += GetRangeComToArpDesign(index);
+#endif // RANGE_OBSERVE_DEBUG
+
   return range;
 }
 
-double PBD_GnssObservation::CalculateCarrierPhase(const int gnss_sat_id, const libra::Vector<3> sat_position,
+double PBD_GnssObservation::CalculateCarrierPhase(const int gnss_sat_id, const Vector<3> sat_position,
         const double sat_clock, const double integer_bias, const double lambda, const double pcc) const
 {
   const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
   double gnss_clock = observed_values_.gnss_clock.at(index);
 
   double range = 0.0;
-  libra::Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
+  Vector<3> receive_position = receiver_->GetPhaseReceivePositionDesignECI(sat_position);
   range = CalculateGeometricRange(gnss_sat_id, receive_position);
 
   range += sat_clock - gnss_clock;
   range += lambda * integer_bias; // ここも電離圏は入れてない．
   range += pcc;
 
+#ifdef RANGE_OBSERVE_DEBUG
+  range += GetRangeComToArpDesign(index);
+#endif // RANGE_OBSERVE_DEBUG
+
   return range; // 位相観測量に変換（単位は[m]）
 }
 
-double PBD_GnssObservation::CalculateGeometricRange(const int gnss_sat_id, const libra::Vector<3> rec_position) const
+double PBD_GnssObservation::CalculateGeometricRange(const int gnss_sat_id, const Vector<3> rec_position) const
 {
   const int index = GetIndexOfStdVector<int>(info_.now_observed_gnss_sat_id, gnss_sat_id);
   auto gnss_position = observed_values_.gnss_satellites_position.at(index);
@@ -215,7 +225,7 @@ double PBD_GnssObservation::CalculateGeometricRange(const int gnss_sat_id, const
 }
 
 // 内容はほぼGnssSatelliteからのコピー
-double PBD_GnssObservation::CalculateIonDelay(const int gnss_id, const libra::Vector<3> rec_position, const double frequency) const
+double PBD_GnssObservation::CalculateIonDelay(const int gnss_id, const Vector<3> rec_position, const double frequency) const
 {
   // gnss_id is wrong or not validate
   if (gnss_id >= num_of_gnss_satellites_) return 0.0;
@@ -228,7 +238,7 @@ double PBD_GnssObservation::CalculateIonDelay(const int gnss_id, const libra::Ve
   altitude = altitude / 1000.0 - Earth_hemisphere;  //[m -> km]
   if (altitude >= 1000.0) return 0.0;               // there is no Ionosphere above 1000km
 
-  libra::Vector<3> gnss_position;
+  Vector<3> gnss_position;
   gnss_position = gnss_satellites_.GetSatellitePositionEci(gnss_id);
 
   double angle_rad = angle(rec_position, gnss_position - rec_position);
@@ -240,4 +250,22 @@ double PBD_GnssObservation::CalculateIonDelay(const int gnss_id, const libra::Ve
   delay *= pow(default_frequency / frequency, 2.0);
 
   return delay;
+}
+
+// 実際のアライメント誤差ありの情報
+const double PBD_GnssObservation::GetRangeComToArpTrue(const int ch) const
+{
+  Vector<3> gnss_direction_b = GetGnssDirection_b(ch);
+  const Vector<3> arp_true = receiver_->GetAntennaPositionBody() + receiver_->GetAlignmentError();
+  const double range_com_to_arp = libra::inner_product(arp_true, gnss_direction_b);
+
+  return range_com_to_arp;
+}
+
+const double PBD_GnssObservation::GetRangeComToArpDesign(const int ch) const
+{
+  Vector<3> gnss_direction_b = GetGnssDirection_b(ch);
+  const double range_com_to_arp = libra::inner_product(receiver_->GetAntennaPositionBody(), gnss_direction_b);
+
+  return range_com_to_arp;
 }

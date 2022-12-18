@@ -20,7 +20,7 @@
 #include "../Spacecraft/PBD_Sat.h"
 #include "PBD_const.h"
 #include <Environment/Global/CelestialRotation.h>
-#include "PhaseCenterCorrection.hpp"
+#include "PCCEstimation.hpp"
 #include "PBD_Lambda.h"
 
 class PBD_dgps
@@ -60,6 +60,7 @@ private:
 
   EstimatedVariables x_est_main;
   EstimatedVariables x_est_target;
+  PCCEstimation pcc_estimate_; // 相対的な量を推定するのでインスタンスとしては2衛星で一つ
 
   Eigen::VectorXd true_N_main;
   Eigen::VectorXd true_N_target; // [m]
@@ -152,7 +153,7 @@ private:
   void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv);
 
   // PCO, PCV関連
-  void EstimateDeltaPCO(const std::vector<double> sdcp_vec);
+  void EstimateRelativePCC(const std::vector<double> sdcp_vec);
 
   // 便利関数関連
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);

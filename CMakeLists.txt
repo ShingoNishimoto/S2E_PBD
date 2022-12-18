@@ -139,6 +139,9 @@ set(SOURCE_FILES
   src/Simulation/PBD/PBD_Lambda.cpp
   src/Simulation/PBD/PBD_const.cpp
   src/Simulation/PBD/PhaseCenterCorrection.cpp
+  src/Simulation/PBD/PCCEstimation.cpp
+  src/Simulation/PBD/PCOEstimation.cpp
+  src/Simulation/PBD/PCVEstimation.cpp
   src/Component/AOCS/PBD_GNSSReceiver.cpp
   src/Component/AOCS/InitGnssReceiver.cpp
   src/Component/AOCS/RelativePositionSensor.cpp

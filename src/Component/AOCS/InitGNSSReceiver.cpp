@@ -85,7 +85,7 @@ bool ReadAntexTable(std::string file_name, const double d_azi, const double d_el
   std::getline(antex_file, line);
   std::istringstream streamline(line);
   // std::string description;
-  streamline >> pco[0] >> pco[1] >> pco[2];
+  streamline >> pco[0] >> pco[1] >> pco[2]; // north, east, upであることを考慮して修正すべきでは？
 
   // NOAZI (skip)
   std::getline(antex_file, line);
