@@ -62,7 +62,9 @@ const bool PCVEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd
   switch (method_)
   {
   case PCV_METHOD::SPHERE:
-    return WeightedLeastSquare(V, W, azi_increment, ele_increment);
+    // return WeightedLeastSquare(V, W, azi_increment, ele_increment);
+    // Wを実際のものにするとうまく行かないので一旦単位行列で実施する．
+    return WeightedLeastSquare(V, Eigen::MatrixXd::Identity(W.rows(), W.cols()), azi_increment, ele_increment);
 
   case PCV_METHOD::ZERNIKE:
     // TODO
@@ -111,9 +113,6 @@ const Eigen::MatrixXd PCVEstimation::CalcLegendreCoeff(const double azi_rad, con
         v_w_nm_update(&v[n_][m_], &w[n_][m_], v[n_ - 1][m_], w[n_ - 1][m_], 0.0, 0.0);
       else
         v_w_nm_update(&v[n_][m_], &w[n_][m_], v[n_ - 1][m_], w[n_ - 1][m_], v[n_ - 2][m_], w[n_ - 2][m_]);
-
-      // VW(0, m_ * 2 * (degree_ - m_ + 2) + n_)     = v[n_][m_];
-      // VW(0, m_ * 2 * (degree_ - m_ + 2) + n_ + 1) = w[n_][m_];
     }
     // next step
     m_++;
@@ -257,9 +256,6 @@ const bool PCVEstimation::WeightedLeastSquare(const Eigen::VectorXd& V, const Ei
 
     // リセット
     InitializeVHW();
-    // V_.resize(0);
-    // H_.resize(0, 0);
-    // W_.resize(0, 0);
   }
   return false;
 }
@@ -277,10 +273,10 @@ void PCVEstimation::SetPcvVecFromSHModel(const double azi_increment, const doubl
     double azimuth = azi_increment * i;
     for (int j = 0; j <= num_ele; j++)
     {
-      double elevation = ele_increment * j;
+      double elevation = ele_increment * (num_ele - j);
       Eigen::MatrixXd VW = CalcLegendreCoeff(azimuth * libra::deg_to_rad, elevation * libra::deg_to_rad);
       RemoveZeroCols(VW);
-      const double dpcv_mm = (VW * CS_vec_)(0);
+      const double dpcv_mm = (VW * CS_vec_)(0) * 1000.0; // mmに変換．
       dpcv_vec_mm_.push_back(dpcv_mm);
     }
   }

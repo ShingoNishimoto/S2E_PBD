@@ -980,6 +980,7 @@ void PBD_dgps::KalmanFilter()
         // 推定完了したら実施しない．
         if (!pcc_estimate_.GetEstimationFinish()) EstimateRelativePCC(ConvEigenVecToStdVec(z.bottomRows(n_common)));
       }
+      // この後に観測更新を実施するステップを再度設けるべき，でないと推定前の位置に基づく速度，加速度情報で伝搬することになり，次の観測更新までに誤差が蓄積してしまう．
 #endif // PCC
 
     }
@@ -1561,7 +1562,7 @@ void PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   }
   // std::cout << "W" << W << std::endl;
 
-  W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
+  // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
   pcc_estimate_.Update(res_ddcp, W);
 }
 

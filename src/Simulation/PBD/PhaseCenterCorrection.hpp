@@ -28,4 +28,6 @@ class PhaseCenterCorrection
   libra::Vector<3> pco_mm_;    // 3次元ベクトル
   std::vector<double> pcv_mm_; // grid pointを保持
 
+  void InitAngleIndexes(void);
+
 };

@@ -11,23 +11,7 @@
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
 azi_increment_(azi_increment), ele_increment_(ele_increment)
 {
-  double azimuth;
-  const int num_azi = (int)(360 / azi_increment);
-  for (int i = 0; i <= num_azi; i++)
-  {
-    azimuth = azi_increment*i;
-    azimuth_index_[azimuth] = i;
-  }
-
-  // antexファイルにはzenith angle順で並んでいるので注意．<- 天頂角に合わせた方がいいのかもしれない．
-  double elevation;
-  const int num_ele = (int)(90 / ele_increment);
-  for (int i = 0; i <= num_ele; i++)
-  {
-    elevation = ele_increment*(num_ele - i);
-    elevation_index_[elevation] = i;
-  }
-
+  InitAngleIndexes();
   PccLogOutput("phase_center_correction.csv");
 }
 
@@ -39,6 +23,7 @@ out_fname_base_(out_fname_base)
   const int num_azi = (int)(360 / azi_increment) + 1;
   const int num_ele = (int)(90 / ele_increment) + 1;
   pcv_mm_.assign(num_azi*num_ele, 0.0); // 0埋め
+  InitAngleIndexes();
 }
 
 PhaseCenterCorrection::~PhaseCenterCorrection(){}
@@ -66,13 +51,13 @@ void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
 
   for (int azimuth = 0; azimuth <= 360; azimuth+=azi_increment_)
   {
-    for (int elevation = 0; elevation < 90; elevation+=ele_increment_)
+    for (int elevation = 90; elevation > 0; elevation-=ele_increment_)
     {
       const int index = azimuth_index_[azimuth] * num_ele + elevation_index_[elevation];
       ofs_ << std::fixed << std::setprecision(precision) << pcv_mm_.at(index) << ",";
     }
     // 最後にカンマが入らないように調整
-    const int index = azimuth_index_[azimuth] * num_ele + elevation_index_[90];
+    const int index = azimuth_index_[azimuth] * num_ele + elevation_index_[0];
     ofs_ << std::fixed << std::setprecision(precision) << pcv_mm_.at(index) << std::endl; // 改行
   }
 }
@@ -123,4 +108,24 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
   pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv;
   pcc /= 1000; // mに変換
   return pcc;
+}
+
+void PhaseCenterCorrection::InitAngleIndexes(void)
+{
+  double azimuth;
+  const int num_azi = (int)(360 / azi_increment_);
+  for (int i = 0; i <= num_azi; i++)
+  {
+    azimuth = azi_increment_*i;
+    azimuth_index_[azimuth] = i;
+  }
+
+  // antexファイルにはzenith angle順で並んでいるので注意．<- 天頂角に合わせた方がいいのかもしれない．
+  double elevation;
+  const int num_ele = (int)(90 / ele_increment_);
+  for (int i = 0; i <= num_ele; i++)
+  {
+    elevation = ele_increment_*(num_ele - i);
+    elevation_index_[elevation] = i;
+  }
 }
