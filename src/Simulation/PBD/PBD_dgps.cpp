@@ -512,14 +512,13 @@ void PBD_dgps::OrbitPropagation()
 #ifdef REDUCED_DYNAMIC
   // acceleration ここでは q = sigma_acc_process
   Eigen::Matrix3d Phi_a = CalculatePhi_a(observe_step_time);
-  double phi = Phi_a(0, 0);
+  // double phi = Phi_a(0, 0);
   // double phi_t = Phi_a(1, 1);
   // double phi_n = Phi_a(2, 2);
   // x_est_main.acceleration = Phi_a * x_est_main.acceleration;
   // x_est_target.acceleration = Phi_a * x_est_target.acceleration;
   Phi_.block(7, 7, 3, 3) = Phi_a;
   Phi_.block(NUM_SINGLE_STATE + 7, NUM_SINGLE_STATE + 7, 3, 3) = Phi_a;
-
 #endif // REDUCED_DYNAMIC
 
   // cdt
@@ -1433,19 +1432,22 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
         {
           if (!x_est_main.ambiguity.is_fixed.at(i)) continue;
           // P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0;
+          // const double variance_N = P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i);
           P_.col(NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(num_state_all_, 1);
           P_.row(NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(1, num_state_all_);
+          // P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = variance_N; // 対角だけ置いておく．
+          // Q_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = 0.0;
         }
         for (int i = 0; i < visible_gnss_nums_.at(1); i++)
         {
           if (!x_est_target.ambiguity.is_fixed.at(i)) continue;
           // P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = 0;
+          // const double variance_N = P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i);
           P_.col(num_main_state_all_ + NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(num_state_all_, 1);
           P_.row(num_main_state_all_ + NUM_SINGLE_STATE + i) = Eigen::MatrixXd::Zero(1, num_state_all_);
+          // P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = variance_N;
+          // Q_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = 0.0;
         }
-        // process noiseも同様．
-        // Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)) = Eigen::MatrixXd::Zero(visible_gnss_nums_.at(0), visible_gnss_nums_.at(0));
-        // Q_.block(num_main_state_all_ + NUM_SINGLE_STATE, num_main_state_all_ + NUM_SINGLE_STATE, visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)) = Eigen::MatrixXd::Zero(visible_gnss_nums_.at(1), visible_gnss_nums_.at(1));
       }
     }
   }
