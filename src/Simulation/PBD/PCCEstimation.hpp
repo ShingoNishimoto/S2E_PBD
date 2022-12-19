@@ -21,7 +21,7 @@ class PCCEstimation
   const bool CheckDataForEstimation(const int count, int& ref_gnss_ch, const double elevation_deg, const double r_sdcp);
   inline const bool GetEstimationFinish(void) const { return estimation_finish_; }
   void InitializeRefInfo(void);
-  void Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W);
+  const bool Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W);
 
  protected:
   PhaseCenterCorrection* pcc_;

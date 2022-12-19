@@ -57,6 +57,7 @@ void PCVEstimation::UpdateReferenceSat(const int count, int& ref_gnss_ch, const 
   }
 }
 
+// 更新が入った時だけtrueを返す．
 const bool PCVEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W, const double azi_increment, const double ele_increment)
 {
   switch (method_)

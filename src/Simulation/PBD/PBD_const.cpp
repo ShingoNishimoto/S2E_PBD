@@ -26,11 +26,11 @@ const double carrier_sigma   = 5.0 * 1e-3; //[m]
 // process noise
 const double sigma_r_process = 0.001;    //[m]
 const double sigma_v_process = 5 * 1e-4;   //[m/s]
-const double sigma_acc_r_process = 1000*3; // 7500;   //[nm/s^2]
-const double sigma_acc_t_process =  800*3; // 1000;   //[nm/s^2]
-const double sigma_acc_n_process = 1000*3; // 500;    //[nm/s^2]
+const double sigma_acc_r_process =  800*1; // 7500;   //[nm/s^2]
+const double sigma_acc_t_process =  800*1; // 1000;   //[nm/s^2]
+const double sigma_acc_n_process = 1000*1; // 500;    //[nm/s^2]
 // DiGiTaLでは500mになっている．実際の受信機使っているからか？
-const double sigma_cdt_process   = 1.0; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
+const double sigma_cdt_process   = 1.2; // 0.25;    //[m] <- これもホンマはホワイトノイズとランダムウォークに分ける必要がある．ドリフトと，バイアス．
 
 const double sigma_N_process     = 0.1;    //[cycle]
 // clock noise model parameters of receiver
@@ -45,7 +45,7 @@ const double earth_radius_spice_mean = 6371000.3852496156;
 const double Earth_Radius = environment::earth_equatorial_radius_m; //m
 
 // t -> 0, sigma -> inf: kinematic, t -> inf, sigma -> 0: dynamic
-const double tau_a = 900 * 0.1;
+const double tau_a = 900;
 const double tau_cdt = 100;
 
 // for Adaptive Kalman Filter

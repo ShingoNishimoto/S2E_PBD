@@ -103,10 +103,16 @@ private:
   // air drag ballistic coefficient
   const double Cd = 2.928e-14 / 5; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．これも推定した方がいい気はする．
 
+  // for Kalman Filter
   Eigen::MatrixXd P_;
   Eigen::MatrixXd Phi_;
   Eigen::MatrixXd Q_;
   Eigen::MatrixXd R_;
+  Eigen::VectorXd x_;
+  Eigen::VectorXd z_;
+  Eigen::VectorXd hx_;
+  Eigen::MatrixXd H_;
+  Eigen::VectorXd pre_Rv_;
 
   double step_time;
   double observe_step_time = 10.0;
@@ -118,6 +124,9 @@ private:
   std::ofstream ofs;
 
   int num_of_gnss_satellites_;
+  int num_observables_ = 0;
+  int num_main_state_all_;
+  int num_state_all_;
 
   std::random_device seed_gen;
   std::mt19937 mt;
@@ -138,13 +147,13 @@ private:
   Eigen::MatrixXd CalculateJacobian(const Eigen::Vector3d& position, const Eigen::Vector3d& velocity) const;
   Eigen::MatrixXd CalculatePhi_a(const double dt);
   Eigen::MatrixXd CalculateQ_at(void); // 名前は要検討．
-  Eigen::MatrixXd CalculateK(Eigen::MatrixXd H, Eigen::MatrixXd S);
+  Eigen::MatrixXd CalculateK(Eigen::MatrixXd H);
   void DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H);
 
   // 観測関連
-  void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv, const int N_offset);
-  void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
-  void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& h_x, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+  void UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x_est, const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen::MatrixXd& H, Eigen::VectorXd& Rv, const int N_offset);
+  void UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
+  void UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen::MatrixXd& H, Eigen::VectorXd& Rv);
   void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
   void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q);
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
@@ -152,8 +161,11 @@ private:
   Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv);
 
+// 整数不定性解除
+  const bool IntegerAmbiguityResolution(const Eigen::VectorXd& x_update);
+
   // PCO, PCV関連
-  void EstimateRelativePCC(const std::vector<double> sdcp_vec);
+  const bool EstimateRelativePCC(const std::vector<double> sdcp_vec);
 
   // 便利関数関連
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);
