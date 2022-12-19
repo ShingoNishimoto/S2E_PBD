@@ -24,12 +24,13 @@ class PCVEstimation
   ~PCVEstimation();
 
   void SetHRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation);
-  void UpdateReferenceSat(const int count, int& ref_gnss_ch, const double r_sdcp);
+  void UpdateReferenceSat(const int count, int& ref_gnss_ch, const double r_sdcp, const double elevation_deg);
   inline const bool GetPcvFixed(void) const { return pcv_fixed_; }
   const bool Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W, const double azi_increment, const double ele_increment);
   inline void ResizeH(const int count) { H_.conservativeResize((int)H_.rows() + count - 1 , (degree_ + 2) * (degree_ + 1)); }
 
   double min_variance_ = 1e18; // 初期値は適当に大きな値．
+  double max_elevation_deg_ = 0.0;
   vector<double> dpcv_vec_mm_;
 
  protected:
@@ -57,4 +58,10 @@ class PCVEstimation
   const bool WeightedLeastSquare(const Eigen::VectorXd& V, const Eigen::MatrixXd& W, const double azi_increment, const double ele_increment);
   void SetPcvVecFromSHModel(const double azi_increment, const double ele_increment);
   void RemoveZeroCols(Eigen::MatrixXd& H);
+
+  // Residual Approach
+  vector<vector<double>> res_vec_;
+  void ResidualInitialization(const std::string fname);
+  double res_azi_increment_;
+  double res_ele_increment_;
 };

@@ -1541,12 +1541,10 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   Eigen::MatrixXd W = Eigen::MatrixXd::Zero(R_ddcp.rows(), R_ddcp.cols());
   for (int i = 0; i < count - 1; i++)
   {
-    // if (fabs(R_ddcp(i, i)) > 1e-10) W(i, i) = 1.0 / R_ddcp(i, i);
     for (int j = i; j < count - 1; j++)
     {
       // 0割りしないようにする．
       if (fabs(R_ddcp(i, j)) > 1e-10){ W(i, j) = 1.0 / R_ddcp(i, j); W(j, i) = W(i, j); }
-      // if (i != j){ W(i, j) = 0.0; W(j, i) = 0.0; }
     }
   }
   // std::cout << "W" << W << std::endl;

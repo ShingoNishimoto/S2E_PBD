@@ -37,7 +37,7 @@ const bool PCCEstimation::CheckDataForEstimation(const int count, int& ref_gnss_
   }
   else if (!pcv_estimate_.GetPcvFixed())
   {
-    pcv_estimate_.UpdateReferenceSat(count, ref_gnss_ch, r_sdcp);
+    pcv_estimate_.UpdateReferenceSat(count, ref_gnss_ch, r_sdcp, elevation_deg);
     return true;
   }
   else std::cout << "ERROR: something wrong" << std::endl;
@@ -48,6 +48,7 @@ const bool PCCEstimation::CheckDataForEstimation(const int count, int& ref_gnss_
 void PCCEstimation::InitializeRefInfo(void)
 {
   pco_estimate_.max_elevation_deg_ = 0.0;
+  pcv_estimate_.max_elevation_deg_ = 0.0;
   pcv_estimate_.min_variance_ = 1e18;
 }
 

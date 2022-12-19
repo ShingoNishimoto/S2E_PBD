@@ -5,7 +5,8 @@
 #include <iomanip>
 #include "Interface/InitInput/IniAccess.h"
 
-#define SH_WLS_DATA_MULTIPLE (10)
+#define SH_WLS_DATA_MULTIPLE (40)
+#define RES_MEAN_DATA_NUM (10)
 
 PCVEstimation::PCVEstimation(const std::string fname)
 {
@@ -24,7 +25,7 @@ PCVEstimation::PCVEstimation(const std::string fname)
   else if (method_str == "RESIDUAL")
   {
     method_ = PCV_METHOD::RESIDUAL;
-    // TODO
+    ResidualInitialization(fname);
   }
   else
   {
@@ -47,12 +48,19 @@ void PCVEstimation::SetHRaw(const int local_pos, const int i, const int ref_j, c
   H_.block(pos, 0, 1, Hi.cols()) = Hi;
 }
 
-void PCVEstimation::UpdateReferenceSat(const int count, int& ref_gnss_ch, const double r_sdcp)
+void PCVEstimation::UpdateReferenceSat(const int count, int& ref_gnss_ch, const double r_sdcp, const double elevation_deg)
 {
-  // 観測誤差が小さな衛星を参照衛星とする．
-  if (r_sdcp < min_variance_)
+  // // 観測誤差が小さな衛星を参照衛星とする．
+  // if (r_sdcp < min_variance_)
+  // {
+  //   min_variance_ = r_sdcp;
+  //   ref_gnss_ch = count;
+  // }
+
+  // 仰角を参照するパターン
+  if (elevation_deg > max_elevation_deg_)
   {
-    min_variance_ = r_sdcp;
+    max_elevation_deg_ = elevation_deg;
     ref_gnss_ch = count;
   }
 }
@@ -191,6 +199,7 @@ void PCVEstimation::InitializeVHW(void)
   // std::cout << "H" << H_ << std::endl;
 }
 
+// jとiの差分なので，衛星のLOSベクトルの差の角度が大きい組み合わせじゃないと実施しないとかをやらないと精度良くするのはムズイのかも？実は組み合わせやからjを一つに固定する必要はないな．
 const bool PCVEstimation::WeightedLeastSquare(const Eigen::VectorXd& V, const Eigen::MatrixXd& W, const double azi_increment, const double ele_increment)
 {
   const int N = V.rows();
@@ -294,4 +303,15 @@ void PCVEstimation::RemoveZeroCols(Eigen::MatrixXd& H)
     H.block(0, offset, row_num, col_num - offset) = H.block(0, offset + 1, row_num, col_num - offset);
     H.conservativeResize(row_num, col_num);
   }
+}
+
+void PCVEstimation::ResidualInitialization(const std::string fname)
+{
+  IniAccess pcv_conf(fname);
+  res_azi_increment_ = pcv_conf.ReadDouble("RESIDUAL", "azi_increment");
+  res_ele_increment_ = pcv_conf.ReadDouble("RESIDUAL", "ele_increment");
+
+  const int num_azi = (int)(360 / res_azi_increment_);
+  const int num_ele = (int)(90 / res_ele_increment_);
+  res_vec_ = vector<vector<double>>((num_azi + 1) * (num_ele + 1));
 }
