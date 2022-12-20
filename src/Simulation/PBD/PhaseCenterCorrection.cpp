@@ -62,8 +62,7 @@ void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
   }
 }
 
-// ベクトルではなくrangeに加わる誤差としてPCCは定義される．
-const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const double elevation_deg)
+const double PhaseCenterCorrection::GetPCV_mm(const double azimuth_deg, const double elevation_deg)
 {
   // incrementの分解能で近い角度を計算
   int azi_floor =  std::floor(azimuth_deg / azi_increment_) * azi_increment_;
@@ -96,7 +95,14 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
 #endif // PIECEWISE_FUNCTION
 
   // 距離に応じた重み付き平均 <- 角度に対してユークリッド距離を定義するのは微妙な気がするので，論文の手法に従う方がよさそう．
-  double target_pcv = w_1*pcv_mm_1 + w_2*pcv_mm_2 + w_3*pcv_mm_3 + w_4*pcv_mm_4;
+  double target_pcv_mm = w_1*pcv_mm_1 + w_2*pcv_mm_2 + w_3*pcv_mm_3 + w_4*pcv_mm_4;
+  return target_pcv_mm;
+}
+
+// ベクトルではなくrangeに加わる誤差としてPCCは定義される．
+const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const double elevation_deg)
+{
+  const double target_pcv_mm = GetPCV_mm(azimuth_deg, elevation_deg);
 
   const double azi_rad = azimuth_deg * libra::deg_to_rad;
   const double ele_rad = elevation_deg * libra::deg_to_rad;
@@ -104,9 +110,8 @@ const double PhaseCenterCorrection::GetPCC_m(const double azimuth_deg, const dou
                                 cos(ele_rad) * sin(azi_rad),
                                 sin(ele_rad) };
   // この時PCOはARP固定座標系であるが，Azimuth，Elevationもコンポ固定の座標系であるため特に変換を入れてない．コンポ座標系とARP固定座標が一致してるかどうかは要注意．
-  double pcc;
-  pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv;
-  pcc /= 1000; // mに変換
+  double pcc = -(pco_mm_[0]*e_vec.at(0) + pco_mm_[1]*e_vec.at(1) + pco_mm_[2]*e_vec.at(2)) + target_pcv_mm;
+  pcc /= 1000.0; // mに変換
   return pcc;
 }
 

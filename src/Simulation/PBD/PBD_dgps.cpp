@@ -1502,15 +1502,14 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     count++;
   }
 
-  if (count == 0) return false;
+  if (count == 0 || !pcc_estimate_.data_available_) return false;
 
   h_sdcp.conservativeResize(count);
   Rv_sdcp.conservativeResize(count);
   R_sdcp = Rv_sdcp.asDiagonal();
   Eigen::MatrixXd M_dd = Eigen::MatrixXd::Zero(count - 1, count);
-  Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
-  // Eigen::MatrixXd H = Eigen::MatrixXd::Zero(count - 1, 3);
-  pcc_estimate_.ResizeH(count);
+  // Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
+  pcc_estimate_.ResizeHV(count);
   int ddcp_ch_offset = 0;
   for (int ch = 0; ch < count; ch++)
   {
@@ -1526,13 +1525,13 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     // std::cout << "z_ddcp" << z_ddcp << std::endl;
     // std::cout << "h_ddcp" << h_ddcp << std::endl;
 
-    res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
+    // res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
     M_dd(ch + ddcp_ch_offset, ch) = 1.0; M_dd(ch + ddcp_ch_offset, ref_gnss_ch) = -1.0;
     // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainのものを考える．
     const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
     const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
 
-    pcc_estimate_.SetHRaw(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation);
+    pcc_estimate_.GetObservableInfo(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation, z_ddcp - h_ddcp);
     // const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
     // for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
   }
@@ -1550,7 +1549,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   // std::cout << "W" << W << std::endl;
 
   // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
-  return pcc_estimate_.Update(res_ddcp, W);
+  return pcc_estimate_.Update(W);
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all_, const Eigen::VectorXd& x_state)

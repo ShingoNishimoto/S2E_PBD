@@ -15,17 +15,17 @@ PCCEstimation::PCCEstimation(){}
 
 PCCEstimation::~PCCEstimation(){}
 
-void PCCEstimation::ResizeH(const int count)
+void PCCEstimation::ResizeHV(const int count)
 {
-  if (!pco_estimate_.GetPcoFixed()) pco_estimate_.ResizeH(count);
-  else if (!pcv_estimate_.GetPcvFixed()) pcv_estimate_.ResizeH(count);
+  if (!pco_estimate_.GetPcoFixed()) pco_estimate_.ResizeHV(count);
+  else if (!pcv_estimate_.GetPcvFixed()) pcv_estimate_.ResizeHV(count);
   else std::cout << "ERROR: something wrong" << std::endl;
 }
 
-void PCCEstimation::SetHRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation)
+void PCCEstimation::GetObservableInfo(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation, const double res_ddcp)
 {
-  if (!pco_estimate_.GetPcoFixed()) pco_estimate_.SetHRaw(local_pos, i, ref_j, gnss_observation);
-  else if (!pcv_estimate_.GetPcvFixed()) pcv_estimate_.SetHRaw(local_pos, i, ref_j, gnss_observation);
+  if (!pco_estimate_.GetPcoFixed()) pco_estimate_.SetHVRaw(local_pos, i, ref_j, gnss_observation, res_ddcp);
+  else if (!pcv_estimate_.GetPcvFixed()) pcv_estimate_.GetObservableInfo(local_pos, i, ref_j, gnss_observation, res_ddcp, pcc_);
   else std::cout << "ERROR: something wrong" << std::endl;
 }
 
@@ -33,11 +33,16 @@ const bool PCCEstimation::CheckDataForEstimation(const int count, int& ref_gnss_
 {
   if (!pco_estimate_.GetPcoFixed())
   {
-    if (pco_estimate_.CheckDataForEstimation(count, ref_gnss_ch, elevation_deg)) return true;
+    if (pco_estimate_.CheckDataForEstimation(count, ref_gnss_ch, elevation_deg))
+    {
+      data_available_ = true;
+      return true;
+    }
   }
   else if (!pcv_estimate_.GetPcvFixed())
   {
     pcv_estimate_.UpdateReferenceSat(count, ref_gnss_ch, r_sdcp, elevation_deg);
+    data_available_ = pcv_estimate_.data_available_;
     return true;
   }
   else std::cout << "ERROR: something wrong" << std::endl;
@@ -52,12 +57,12 @@ void PCCEstimation::InitializeRefInfo(void)
   pcv_estimate_.min_variance_ = 1e18;
 }
 
-const bool PCCEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd& W)
+const bool PCCEstimation::Update(const Eigen::MatrixXd& W)
 {
   if (!pco_estimate_.GetPcoFixed())
   {
     // ここで更新する．
-    if (pco_estimate_.DpcoInitialEstimation(V, W))
+    if (pco_estimate_.DpcoInitialEstimation(W))
     {
       pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
       return true;
@@ -65,7 +70,7 @@ const bool PCCEstimation::Update(const Eigen::VectorXd& V, const Eigen::MatrixXd
   }
   else if (!pcv_estimate_.GetPcvFixed())
   {
-    if (pcv_estimate_.Update(V, W, pcc_->azi_increment_, pcc_->ele_increment_))
+    if (pcv_estimate_.Update(W, pcc_))
     {
       pcc_->UpdatePCV(pcv_estimate_.dpcv_vec_mm_);
       pcc_->PccLogOutput(pcc_->out_fname_base_ + ".csv"); // ステップごとに保存できるようにしたい．

@@ -12,11 +12,12 @@ PCOEstimation::PCOEstimation()
 PCOEstimation::~PCOEstimation()
 {}
 
-void PCOEstimation::SetHRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation)
+void PCOEstimation::SetHVRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation, const double res_ddcp)
 {
   const libra::Vector<3> de = gnss_observation.GetGnssDirection_c(i) - gnss_observation.GetGnssDirection_c(ref_j);
-  const int pos = local_pos + V_.rows();
+  const int pos = local_pos + W_.rows();
   for (int i = 0; i < 3; i++) H_(pos, i) = de[i];
+  V_(pos) = res_ddcp;
 }
 
 const bool PCOEstimation::CheckDataForEstimation(const int count, int& ref_gnss_ch, const double elevation_deg)
@@ -35,21 +36,20 @@ const bool PCOEstimation::CheckDataForEstimation(const int count, int& ref_gnss_
 }
 
 // template <typename T, size_t N>
-const bool PCOEstimation::DpcoInitialEstimation(const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W)
+const bool PCOEstimation::DpcoInitialEstimation(const Eigen::MatrixXd& W)
 {
   static int epoch_count = 0;
   const double ddcp_res_thresh = 1e-4;
 
-  const int N = V_Res.rows();
-  const int current_size = V_.rows();
+  const int N = W.rows();
+  const int current_size = W_.rows();
   const int new_size = current_size + N;
-  V_.conservativeResize(new_size);
   Eigen::MatrixXd W_cpy = W_;
   W_ = Eigen::MatrixXd::Zero(new_size, new_size);
 
   // append new matrix and observations
   // H_.block(current_size, 0, N, 3) = H;
-  V_.block(current_size, 0, N, 1) = V_Res;
+  // V_.block(current_size, 0, N, 1) = V_Res;
   W_.topLeftCorner(current_size, current_size) = W_cpy;
   W_.block(current_size, current_size, N, N) = W;
 
