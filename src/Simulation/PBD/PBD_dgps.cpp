@@ -61,8 +61,10 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
-  const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
-  x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
+  // const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
+  // x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
+  // 一旦こっちは真値を持っていると仮定する．
+  x_est_main.pcc = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCCPtr();
 
   x_est_target.position = Eigen::VectorXd::Zero(3);
   const Dynamics& target_dynamics = spacecrafts.at(1)->GetDynamics();
@@ -1531,10 +1533,14 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainのものを考える．
     const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
     const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
+    // for debug +++++++++++++++++++++++++
+    if (main_observation.GetGnssElevationDeg(main_ch) < 15)
+    {
+      std::cout << "res_ddcp: " << res_ddcp << std::endl;
+    }
+    // +++++++++++++++++++++++++++++++++++
 
     pcc_estimate_.GetObservableInfo(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation, res_ddcp);
-    // const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
-    // for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
   }
   Eigen::MatrixXd R_ddcp = M_dd * R_sdcp * M_dd.transpose();
 

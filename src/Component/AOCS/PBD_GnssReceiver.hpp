@@ -44,6 +44,7 @@ public:
   inline const libra::Vector<3> GetPCO_mm(void) const { return pcc_.GetPCO_mm(); }
   inline const vector<GnssInfo> GetGnssInfoVec(void) const { return vec_gnssinfo_; }
   inline const double GetClockBias(void) const { return clock_bias_; }
+  inline PhaseCenterCorrection* GetPCCPtr(void) { return &pcc_; } // constはつけない．
 
   struct GnssReceiverObservations
   {

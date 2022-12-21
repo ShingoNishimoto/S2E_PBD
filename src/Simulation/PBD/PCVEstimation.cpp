@@ -402,6 +402,8 @@ void PCVEstimation::SetGnssInfo(const int ch, const int i, const int ref_j, cons
   const int round_ele = std::round(elevation/ res_ele_increment_) * res_ele_increment_;
   const int num_ele = (int)(90 / res_ele_increment_) + 1;
 
+  // std::cout << "azi: " << azimuth << ", ele: " << elevation << ", DDCP residual: " << res_ddcp * 1000 << std::endl;
+
   // 参照部分のPCVとの和をPCV観測量とみなして追加．
   // ここは飛び値処理を実施した方がよさそう．あと，天頂方向の残差はスキップするようにすべきなきがする．
   res_mm_vec_.at(num_ele*res_azimuth_index_.at(round_azi) + res_elevation_index_.at(round_ele)).push_back(res_ddcp * 1000 + ref_pcv_mm);
