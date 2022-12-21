@@ -71,7 +71,7 @@ const double PhaseCenterCorrection::GetPCV_mm(const double azimuth_deg, const do
   int ele_ceil =  std::ceil(elevation_deg / ele_increment_) * ele_increment_;
 
   // 対称点周り4点から補間して求める
-  const int num_ele = 90 / ele_increment_;
+  const int num_ele = (int)(90 / ele_increment_) + 1;
   double pcv_mm_1 = pcv_mm_.at(num_ele*azimuth_index_[azi_floor] + elevation_index_[ele_floor]);
   double pcv_mm_2 = pcv_mm_.at(num_ele*azimuth_index_[azi_ceil] + elevation_index_[ele_floor]);
   double pcv_mm_3 = pcv_mm_.at(num_ele*azimuth_index_[azi_floor] + elevation_index_[ele_ceil]);

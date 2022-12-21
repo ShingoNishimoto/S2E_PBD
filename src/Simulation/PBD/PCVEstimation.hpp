@@ -17,6 +17,20 @@ using libra::Matrix;
 using libra::Vector;
 using std::vector;
 
+class PCV_GnssDirection
+{
+ public:
+  PCV_GnssDirection(const int azimuth, const int elevation);
+  int azimuth_;
+  int elevation_;
+
+  // mapのkeyとして指定するために定義
+  bool operator<(const PCV_GnssDirection& rhs) const
+  {
+    return elevation_ < rhs.elevation_;
+  }
+};
+
 class PCVEstimation
 {
  public:
@@ -64,15 +78,9 @@ class PCVEstimation
   void RemoveZeroCols(Eigen::MatrixXd& H);
 
   // Residual Approach
-  struct ObservableInfo
-  {
-    int ch;
-    int azimuth;
-    int elevation;
-  };
 
-  vector<vector<double>> res_vec_;
-  vector<ObservableInfo> observable_info_vec_;
+  vector<vector<double>> res_mm_vec_;
+  std::map<PCV_GnssDirection, vector<int>> observable_info_vec_;
   vector<vector<double>> weight_vec_;
   double res_azi_increment_; // pccのモデルと違っても対応できるようにしている．
   double res_ele_increment_; // pccのモデルと違っても対応できるようにしている．
@@ -83,4 +91,5 @@ class PCVEstimation
   void ResidualInitialization(const std::string fname);
   void SetGnssInfo(const int ch, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation, const double res_ddcp, PhaseCenterCorrection* pcc);
   const bool ResidualBasedUpdate(const Eigen::MatrixXd& W, PhaseCenterCorrection* pcc);
+  const double CalcAverageDDCPResidual(const int index);
 };

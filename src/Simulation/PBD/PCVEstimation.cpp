@@ -7,7 +7,10 @@
 #include "Interface/InitInput/IniAccess.h"
 
 #define SH_WLS_DATA_MULTIPLE (40)
-#define RES_MEAN_DATA_NUM (3)
+#define RES_MEAN_DATA_NUM (5)
+
+PCV_GnssDirection::PCV_GnssDirection(const int azimuth, const int elevation): azimuth_(azimuth), elevation_(elevation)
+{}
 
 PCVEstimation::PCVEstimation(const std::string fname)
 {
@@ -101,8 +104,8 @@ void PCVEstimation::UpdateReferenceSat(const int count, int& ref_gnss_ch, const 
   data_available_ = true;
   if (method_ == PCV_METHOD::RESIDUAL)
   {
-    // 最大仰角が70°以下の時は使えない．
-    if (max_elevation_deg_ < 70.0) data_available_ = false;
+    // 最大仰角がTBD以下の時は使えない．
+    if (max_elevation_deg_ < 75) data_available_ = false;
   }
 }
 
@@ -368,7 +371,7 @@ void PCVEstimation::ResidualInitialization(const std::string fname)
   const int num_azi = (int)(360 / res_azi_increment_);
   const int num_ele = (int)(90 / res_ele_increment_);
   // groupをelevation方向だけにした方がいいかも．そうすればもう少し増えそう．
-  res_vec_ = vector<vector<double>>((num_azi + 1) * (num_ele + 1));
+  res_mm_vec_ = vector<vector<double>>((num_azi + 1) * (num_ele + 1));
   weight_vec_ = vector<vector<double>>((num_azi + 1) * (num_ele + 1));
 
   for (int i = 0; i <= num_azi; i++)
@@ -395,53 +398,119 @@ void PCVEstimation::SetGnssInfo(const int ch, const int i, const int ref_j, cons
   // roundを使って近いグリッド点の値とみなす．
   const double azimuth = gnss_observation.GetGnssAzimuthDeg(i);
   const double elevation = gnss_observation.GetGnssElevationDeg(i);
-  const int round_azi = std::round(azimuth / res_azi_increment_) * res_azi_increment_;
+  int round_azi = std::round(azimuth / res_azi_increment_) * res_azi_increment_; if (round_azi >= 360) round_azi = 0;
   const int round_ele = std::round(elevation/ res_ele_increment_) * res_ele_increment_;
-  const int num_ele = (int)(90 / res_ele_increment_);
+  const int num_ele = (int)(90 / res_ele_increment_) + 1;
 
   // 参照部分のPCVとの和をPCV観測量とみなして追加．
-  res_vec_.at(num_ele*res_azimuth_index_[round_azi] + res_elevation_index_[round_ele]).push_back(res_ddcp + ref_pcv_mm);
-  observable_info_vec_.push_back(ObservableInfo({ch, round_azi, round_ele}));
+  // ここは飛び値処理を実施した方がよさそう．あと，天頂方向の残差はスキップするようにすべきなきがする．
+  res_mm_vec_.at(num_ele*res_azimuth_index_.at(round_azi) + res_elevation_index_.at(round_ele)).push_back(res_ddcp * 1000 + ref_pcv_mm);
+
+  PCV_GnssDirection dir = PCV_GnssDirection(round_azi, round_ele);
+  observable_info_vec_[dir].push_back(ch);
 }
 
 const bool PCVEstimation::ResidualBasedUpdate(const Eigen::MatrixXd& W, PhaseCenterCorrection* pcc)
 {
-  const int pcv_num_azi = (int)(360 / pcc->azi_increment_);
-  const int pcv_num_ele = (int)(90 / pcc->ele_increment_);
-  dpcv_vec_mm_.assign((pcv_num_azi + 1) * (pcv_num_ele + 1), 0.0); // 初めに0埋め
+  const int pcv_num_azi = (int)(360 / pcc->azi_increment_) + 1;
+  const int pcv_num_ele = (int)(90 / pcc->ele_increment_) + 1;
+  dpcv_vec_mm_.assign((pcv_num_azi) * (pcv_num_ele), 0.0); // 初めに0埋め
 
-  const int num_ele = (int)(90 / res_ele_increment_);
+  const int num_ele = (int)(90 / res_ele_increment_) + 1;
   bool updated = false;
-  for (int i = 0; i < W.rows(); i++)
+  for (const auto& info : observable_info_vec_)
   {
-    const auto info = observable_info_vec_.at(i);
-    const int index = num_ele*res_azimuth_index_[info.azimuth] + res_elevation_index_[info.elevation];
-    weight_vec_.at(index).push_back(W(i, i));
+    const PCV_GnssDirection& dir = info.first;
+    const int index = num_ele*res_azimuth_index_.at(dir.azimuth_) + res_elevation_index_.at(dir.elevation_);
+    for (const int& ch : info.second) weight_vec_.at(index).push_back(W(ch, ch));
 
     // 一定数たまれば平均をとる．
-    if (res_vec_.at(index).size() >= RES_MEAN_DATA_NUM)
+    if (res_mm_vec_.at(index).size() >= RES_MEAN_DATA_NUM)
     {
-      double dpcv = 0;
-      for (int j = 0; j < res_vec_.at(index).size(); j++)
+      double dpcv_mm = CalcAverageDDCPResidual(index);
+
+      // 複数gridに該当する場合は以下のように更新する．
+      int azi_floor =  std::round((dir.azimuth_ - res_azi_increment_ * 0.5) / pcc->azi_increment_) * pcc->azi_increment_;
+      int azi_ceil =  std::round((dir.azimuth_ + res_azi_increment_ * 0.5 - pcc->azi_increment_) / pcc->azi_increment_) * pcc->azi_increment_;
+      int ele_floor =  std::round((dir.elevation_ - res_ele_increment_ * 0.5) / pcc->ele_increment_) * pcc->ele_increment_; if (ele_floor < 0) ele_floor = 0;
+      int ele_ceil =  std::round((dir.elevation_ + res_ele_increment_ * 0.5 - pcc->ele_increment_) / pcc->ele_increment_) * pcc->ele_increment_; if (ele_ceil > 90) ele_ceil = 90;
+
+      for (int azimuth = azi_floor; azimuth <= azi_ceil; azimuth+=pcc->azi_increment_)
       {
-        dpcv += res_vec_.at(index).at(j) * weight_vec_.at(index).at(j);
+        for (int elevation = ele_floor; elevation <= ele_ceil; elevation+=pcc->ele_increment_)
+        {
+          // ここで角度の値域を直す．
+          int azi_fixed = azimuth;
+          if (azimuth < 0) azi_fixed += 360;
+          else if (azimuth > 360) azi_fixed -= 360;
+          const int dpcv_index = pcc->azimuth_index_.at(azi_fixed) * pcv_num_ele + pcc->elevation_index_.at(elevation);
+          dpcv_vec_mm_.at(dpcv_index) = dpcv_mm;
+          // 360にも同一の値を追加．
+          if (azi_fixed == 0) dpcv_vec_mm_.at(pcc->azimuth_index_.at(360) * pcv_num_ele + pcc->elevation_index_.at(elevation)) = dpcv_mm;
+        }
       }
-      dpcv /= std::accumulate(weight_vec_.at(index).begin(), weight_vec_.at(index).end(), 0.0);
-
-      // 複数gridに該当する場合もあるので修正する．
-      const int grid_azimuth = std::round(info.azimuth / pcc->azi_increment_) * pcc->azi_increment_;
-      const int grid_elevation = std::round(info.elevation / pcc->ele_increment_) * pcc->ele_increment_;
-      const int dpcv_index = pcc->azimuth_index_[grid_azimuth] * pcv_num_ele + pcc->elevation_index_[grid_elevation];
-      dpcv_vec_mm_.at(dpcv_index) = dpcv * 1000.0; // mmに変換
-
       // クリア
-      res_vec_.at(index).clear(); weight_vec_.at(index).clear();
+      res_mm_vec_.at(index).clear(); weight_vec_.at(index).clear();
       updated = true;
     }
   }
 
+  observable_info_vec_.clear();
   // 更新
   // pcc->UpdatePCV(dpcv_vec_mm_);
   return updated;
 }
 
+const double PCVEstimation::CalcAverageDDCPResidual(const int index)
+{
+  bool check_finish = false;
+  vector<double> residuals = res_mm_vec_.at(index);
+  vector<double> weights = weight_vec_.at(index);
+
+  double dpcv_mm;
+  while(!check_finish)
+  {
+    dpcv_mm = 0;
+    double weight_sum = 0;
+    const int data_num = residuals.size();
+    if (data_num < 3) return 0; // 外れ値が多い場合は0を返す．
+
+    for (int i = 0; i < data_num; i++)
+    {
+      dpcv_mm += residuals.at(i) * weights.at(i);
+      weight_sum += weights.at(i);
+    }
+    dpcv_mm /= weight_sum; // mean
+
+    double variance = 0;
+    for (int i = 0; i < data_num; i++)
+    {
+      variance += pow(residuals.at(i) - dpcv_mm, 2.0);
+    }
+    variance /= data_num;
+    const double sigma = sqrt(variance);
+    check_finish = true;
+
+    // 極端に大きな値をはじきたい．
+    for (auto it = residuals.begin(); it != residuals.end();)
+    {
+      // 2 sigma区間に入っていれば正常とする．
+      if (*it > dpcv_mm + 2 * sigma || *it < dpcv_mm - 2 * sigma)
+      {
+        it = residuals.erase(it);
+        size_t i = std::distance(residuals.begin(), it);
+        weights.erase(weights.begin() + i); // weightに関しても削除
+        check_finish = false;
+      }
+      else ++it;
+    }
+  }
+
+  if (!std::isfinite(dpcv_mm))
+  {
+    std::cout << "pcv error!" << std::endl;
+    // abort();
+    return 0;
+  }
+  return dpcv_mm;
+}
