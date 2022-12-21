@@ -16,6 +16,7 @@ class PhaseCenterCorrection
   inline void UpdatePCO(const libra::Vector<3> dpco_mm) { pco_mm_ += dpco_mm; }
   void UpdatePCV(const std::vector<double> dpcv_mm);
   inline void SetPCO(const libra::Vector<3> pco_mm) { pco_mm_ = pco_mm; }
+  void PcvLogOutput(std::string out_fname);
   void PccLogOutput(std::string out_fname);
 
   const double azi_increment_;

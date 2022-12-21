@@ -12,6 +12,7 @@ PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<d
 azi_increment_(azi_increment), ele_increment_(ele_increment)
 {
   InitAngleIndexes();
+  PcvLogOutput("phase_center_variation.csv");
   PccLogOutput("phase_center_correction.csv");
 }
 
@@ -36,9 +37,9 @@ void PhaseCenterCorrection::UpdatePCV(const std::vector<double> dpcv_mm)
   }
 }
 
-void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
+void PhaseCenterCorrection::PcvLogOutput(std::string out_fname)
 {
-  std::ofstream ofs_(out_fname); // ここはアンテナごとに指定したい．
+  std::ofstream ofs_(out_fname);
   const int precision = 5;
 
   for (int i = 0; i < 3; i++)
@@ -62,6 +63,30 @@ void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
   }
 }
 
+void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
+{
+  std::ofstream ofs_(out_fname);
+  const int precision = 5;
+
+  for (int i = 0; i < 3; i++)
+  {
+    ofs_ << std::fixed << std::setprecision(precision) << pco_mm_[i] << ",";
+  }
+  ofs_ << std::endl; // 改行
+
+  const int num_ele = (int)(90 / ele_increment_) + 1;
+
+  for (int azimuth = 0; azimuth <= 360; azimuth+=azi_increment_)
+  {
+    for (int elevation = 90; elevation > 0; elevation-=ele_increment_)
+    {
+      ofs_ << std::fixed << std::setprecision(precision) << GetPCC_m(azimuth, elevation) * 1000.0 << ","; // mmで記録
+    }
+    // 最後にカンマが入らないように調整
+    ofs_ << std::fixed << std::setprecision(precision) << GetPCC_m(azimuth, 0) * 1000.0 << std::endl; // 改行
+  }
+}
+
 const double PhaseCenterCorrection::GetPCV_mm(const double azimuth_deg, const double elevation_deg)
 {
   // incrementの分解能で近い角度を計算
@@ -70,8 +95,14 @@ const double PhaseCenterCorrection::GetPCV_mm(const double azimuth_deg, const do
   int ele_floor =  std::floor(elevation_deg / ele_increment_) * ele_increment_;
   int ele_ceil =  std::ceil(elevation_deg / ele_increment_) * ele_increment_;
 
-  // 対称点周り4点から補間して求める
   const int num_ele = (int)(90 / ele_increment_) + 1;
+  // 同じになるときはgrid点の角度だということなのでそのまま返す．
+  if (azi_floor == azi_ceil && ele_floor == ele_ceil)
+  {
+    return pcv_mm_.at(num_ele*azimuth_index_[azimuth_deg] + elevation_index_[elevation_deg]);
+  }
+
+  // 対称点周り4点から補間して求める
   double pcv_mm_1 = pcv_mm_.at(num_ele*azimuth_index_[azi_floor] + elevation_index_[ele_floor]);
   double pcv_mm_2 = pcv_mm_.at(num_ele*azimuth_index_[azi_ceil] + elevation_index_[ele_floor]);
   double pcv_mm_3 = pcv_mm_.at(num_ele*azimuth_index_[azi_floor] + elevation_index_[ele_ceil]);
@@ -86,8 +117,14 @@ const double PhaseCenterCorrection::GetPCV_mm(const double azimuth_deg, const do
   w_1 /= w_sum; w_2 /= w_sum; w_3 /= w_sum; w_4 /= w_sum; // 正規化
 #endif // DISTANCE_BASED_INTERPOLATION
 #ifdef PIECEWISE_FUNCTION
-  const double gamma = (azimuth_deg - azi_floor) / (azi_ceil - azi_floor);
-  const double beta = (elevation_deg - ele_floor) / (ele_ceil - ele_floor);
+  double gamma;
+  if (azi_floor == azi_ceil) gamma = 1.0;
+  else gamma = (azimuth_deg - azi_floor) / (azi_ceil - azi_floor);
+
+  double beta;
+  if (ele_floor == ele_ceil) beta = 1.0;
+  else beta = (elevation_deg - ele_floor) / (ele_ceil - ele_floor);
+
   double w_1 = (1 - gamma) * (1 - beta);
   double w_2 = gamma * (1 - beta);
   double w_3 = (1 - gamma) * beta;

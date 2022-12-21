@@ -73,7 +73,9 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W)
     if (pcv_estimate_.Update(W, pcc_))
     {
       pcc_->UpdatePCV(pcv_estimate_.dpcv_vec_mm_);
-      pcc_->PccLogOutput(pcc_->out_fname_base_ + ".csv"); // ステップごとに保存できるようにしたい．
+       // ステップごとに保存できるようにしたい．
+      pcc_->PcvLogOutput(pcc_->out_fname_base_ + "_pcv.csv");
+      pcc_->PccLogOutput(pcc_->out_fname_base_ + "_pcc.csv");
       return true;
     }
   }

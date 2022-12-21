@@ -77,7 +77,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
   libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
-  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_pcv");
+  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
   // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
