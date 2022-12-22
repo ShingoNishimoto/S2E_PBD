@@ -1536,7 +1536,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     // for debug +++++++++++++++++++++++++
     if (main_observation.GetGnssElevationDeg(main_ch) < 15)
     {
-      std::cout << "res_ddcp: " << res_ddcp << std::endl;
+      // std::cout << "res_ddcp: " << res_ddcp << std::endl;
     }
     // +++++++++++++++++++++++++++++++++++
 
