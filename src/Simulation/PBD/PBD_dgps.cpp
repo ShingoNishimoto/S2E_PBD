@@ -61,8 +61,10 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
-  const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
-  x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
+  // const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
+  // x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
+  // 一旦こっちは真値を持っていると仮定する．
+  x_est_main.pcc = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCCPtr();
 
   x_est_target.position = Eigen::VectorXd::Zero(3);
   const Dynamics& target_dynamics = spacecrafts.at(1)->GetDynamics();
@@ -75,7 +77,7 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
   libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
-  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_pcv");
+  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
   // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
@@ -1471,12 +1473,12 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
 
   int ref_gnss_ch;
   const int visible_ch_num = common_observed_gnss_sat_id.size();
-  Eigen::VectorXd h_sdcp = Eigen::VectorXd::Zero(visible_ch_num);
   Eigen::MatrixXd R_sdcp = R_.bottomRightCorner(visible_ch_num, visible_ch_num);
   Eigen::VectorXd Rv_sdcp(visible_ch_num);
 
   int count = 0;
   std::vector<double> sdcp_raw;
+  std::vector<double> h_sdcp;
   std::vector<int> gnss_ids;
   pcc_estimate_.InitializeRefInfo();
   for (int ch = 0; ch < visible_ch_num; ch++)
@@ -1494,7 +1496,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     const double pcc_target = x_est_target.pcc->GetPCC_m(gnss_observations_.at(1).GetGnssAzimuthDeg(target_ch), gnss_observations_.at(1).GetGnssElevationDeg(target_ch));
     const double carrier_phase_target = gnss_observations_.at(1).CalculateCarrierPhase(gnss_id, ConvEigenVecToLibraVec<3>(x_est_target.position), x_est_target.clock(0), x_est_target.ambiguity.N.at(target_ch), L1_lambda, pcc_target);
 
-    h_sdcp(count) = carrier_phase_target - carrier_phase_main;
+    h_sdcp.push_back(carrier_phase_target - carrier_phase_main);
     sdcp_raw.push_back(sdcp_vec.at(ch));
     gnss_ids.push_back(gnss_id);
     Rv_sdcp(count) = R_sdcp(ch, ch);
@@ -1502,15 +1504,13 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     count++;
   }
 
-  if (count == 0) return false;
+  if (count == 0 || !pcc_estimate_.data_available_) return false;
 
-  h_sdcp.conservativeResize(count);
   Rv_sdcp.conservativeResize(count);
   R_sdcp = Rv_sdcp.asDiagonal();
   Eigen::MatrixXd M_dd = Eigen::MatrixXd::Zero(count - 1, count);
-  Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
-  // Eigen::MatrixXd H = Eigen::MatrixXd::Zero(count - 1, 3);
-  pcc_estimate_.ResizeH(count);
+  // Eigen::VectorXd res_ddcp = Eigen::VectorXd::Zero(count - 1);
+  pcc_estimate_.ResizeHV(count);
   int ddcp_ch_offset = 0;
   for (int ch = 0; ch < count; ch++)
   {
@@ -1521,38 +1521,42 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
     }
 
     const double z_ddcp = sdcp_raw.at(ch) - sdcp_raw.at(ref_gnss_ch);
-    const double h_ddcp = h_sdcp(ch) - h_sdcp(ref_gnss_ch);
+    const double h_ddcp = h_sdcp.at(ch) - h_sdcp.at(ref_gnss_ch);
+    const double res_ddcp = z_ddcp - h_ddcp;
 
     // std::cout << "z_ddcp" << z_ddcp << std::endl;
     // std::cout << "h_ddcp" << h_ddcp << std::endl;
+    // std::cout << "res_ddcp" << res_ddcp << std::endl;
 
-    res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
+    // res_ddcp(ch + ddcp_ch_offset) = z_ddcp - h_ddcp;
     M_dd(ch + ddcp_ch_offset, ch) = 1.0; M_dd(ch + ddcp_ch_offset, ref_gnss_ch) = -1.0;
     // 視線方向ベクトルは2衛星でほぼ同等とみなしてmainのものを考える．
     const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
     const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
+    // for debug +++++++++++++++++++++++++
+    if (main_observation.GetGnssElevationDeg(main_ch) < 15)
+    {
+      // std::cout << "res_ddcp: " << res_ddcp << std::endl;
+    }
+    // +++++++++++++++++++++++++++++++++++
 
-    pcc_estimate_.SetHRaw(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation);
-    // const libra::Vector<3> de = main_observation.GetGnssDirection_c(main_ch) - main_observation.GetGnssDirection_c(main_ref_gnss_original_ch);
-    // for (int i = 0; i < 3; i++) H(ch + ddcp_ch_offset, i) = de[i];
+    pcc_estimate_.GetObservableInfo(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation, res_ddcp);
   }
   Eigen::MatrixXd R_ddcp = M_dd * R_sdcp * M_dd.transpose();
 
   Eigen::MatrixXd W = Eigen::MatrixXd::Zero(R_ddcp.rows(), R_ddcp.cols());
   for (int i = 0; i < count - 1; i++)
   {
-    // if (fabs(R_ddcp(i, i)) > 1e-10) W(i, i) = 1.0 / R_ddcp(i, i);
     for (int j = i; j < count - 1; j++)
     {
       // 0割りしないようにする．
-      if (fabs(R_ddcp(i, j)) > 1e-10){ W(i, j) = 1.0 / R_ddcp(i, j); W(j, i) = W(i, j); }
-      // if (i != j){ W(i, j) = 0.0; W(j, i) = 0.0; }
+      if (fabs(R_ddcp(i, j)) > 1e-18){ W(i, j) = 1.0 / R_ddcp(i, j); W(j, i) = W(i, j); }
     }
   }
   // std::cout << "W" << W << std::endl;
 
   // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
-  return pcc_estimate_.Update(res_ddcp, W);
+  return pcc_estimate_.Update(W);
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all_, const Eigen::VectorXd& x_state)

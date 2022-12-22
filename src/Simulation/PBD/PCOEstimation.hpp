@@ -16,10 +16,10 @@ class PCOEstimation
   ~PCOEstimation();
 
   // template <typename T, size_t N>
-  const bool DpcoInitialEstimation(const Eigen::VectorXd& V_Res, const Eigen::MatrixXd& W);
+  const bool DpcoInitialEstimation(const Eigen::MatrixXd& W);
   const bool GetPcoFixed(void) const { return pco_fixed_; }
-  void SetHRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation);
-  inline void ResizeH(const int count) { H_.conservativeResize((int)H_.rows() + count - 1 , 3); }
+  void SetHVRaw(const int local_pos, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation, const double res_ddcp);
+  inline void ResizeHV(const int count) { H_.conservativeResize((int)H_.rows() + count - 1 , 3); V_.conservativeResize((int)V_.rows() + count - 1); }
   const bool CheckDataForEstimation(const int count, int& ref_gnss_ch, const double elevation_deg);
 
   double max_elevation_deg_ = 0.0;
@@ -31,6 +31,4 @@ class PCOEstimation
   Eigen::MatrixXd H_;
   Eigen::MatrixXd W_;
   bool pco_fixed_ = false;
-
-  const Eigen::VectorXd WeightedLeastSquare(const Eigen::MatrixXd& H, const Eigen::VectorXd& V, const Eigen::MatrixXd& W);
 };
