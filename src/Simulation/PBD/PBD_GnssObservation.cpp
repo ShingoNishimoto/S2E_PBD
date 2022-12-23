@@ -150,8 +150,9 @@ void PBD_GnssObservation::UpdateInfoAfterObserved()
     info_.pre_observed_status.at(gnss_sat_id) = info_.now_observed_status.at(gnss_sat_id);
     info_.pre_observed_gnss_sat_id.push_back(gnss_sat_id);
   }
-  info_.now_observed_status.assign(num_of_gnss_satellites_, false);
-  // info_.now_observed_gnss_sat_id.clear(); //クリア
+  // nowのクリアは次回更新の最初に行う．
+  // info_.now_observed_status.assign(num_of_gnss_satellites_, false);
+  // info_.now_observed_gnss_sat_id.clear();
   return;
 }
 
