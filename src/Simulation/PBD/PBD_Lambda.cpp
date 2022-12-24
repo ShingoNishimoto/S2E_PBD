@@ -87,7 +87,7 @@ bool PBD_Lambda::Solve(METHOD method)
 
   case METHOD::PAR_ILS:
     // const double p0 = 0.8; // ちゃんと決める．
-    fixed_num = PartialSearch(z_hat, P_z_hat, 0.8);
+    fixed_num = PartialSearch(z_hat, P_z_hat, 0.8); // 厳しすぎるとダメなのか？意味わからん．1つだけとかだと解がバグってるのかも
     break;
 
   default:

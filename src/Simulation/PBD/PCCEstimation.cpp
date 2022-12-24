@@ -57,12 +57,13 @@ void PCCEstimation::InitializeRefInfo(void)
   pcv_estimate_.min_variance_ = 1e18;
 }
 
-const bool PCCEstimation::Update(const Eigen::MatrixXd& W)
+// debug出力で反くて普通にログに残すとかできるように修正したい．
+const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_time)
 {
   if (!pco_estimate_.GetPcoFixed())
   {
     // ここで更新する．
-    if (pco_estimate_.DpcoInitialEstimation(W))
+    if (pco_estimate_.DpcoInitialEstimation(W, elapsed_time))
     {
       pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
       return true;
@@ -70,7 +71,7 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W)
   }
   else if (!pcv_estimate_.GetPcvFixed())
   {
-    if (pcv_estimate_.Update(W, pcc_))
+    if (pcv_estimate_.Update(W, pcc_, elapsed_time))
     {
       pcc_->UpdatePCV(pcv_estimate_.dpcv_vec_mm_);
        // ステップごとに保存できるようにしたい．

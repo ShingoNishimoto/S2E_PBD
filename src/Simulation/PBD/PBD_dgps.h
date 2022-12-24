@@ -158,6 +158,7 @@ private:
   void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
   void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q);
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
+  void InitGnssObserveModels(GnssObserveModel& observed_model, const int gnss_num);
   Eigen::Vector3d ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const int pre_base_offset, const Eigen::VectorXd& pre_Rv);
@@ -167,7 +168,7 @@ private:
   const bool IntegerAmbiguityResolution(const Eigen::VectorXd& x_update);
 
   // PCO, PCV関連
-  const bool EstimateRelativePCC(const std::vector<double> sdcp_vec);
+  const bool EstimateRelativePCC(const std::vector<double> sdcp_vec, const double elapsed_time);
 
   // 便利関数関連
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);
