@@ -87,7 +87,7 @@ bool PBD_Lambda::Solve(METHOD method)
 
   case METHOD::PAR_ILS:
     // const double p0 = 0.8; // ちゃんと決める．
-    fixed_num = PartialSearch(z_hat, P_z_hat, 0.8);
+    fixed_num = PartialSearch(z_hat, P_z_hat, 0.8); // 厳しすぎるとダメなのか？意味わからん．1つだけとかだと解がバグってるのかも
     break;
 
   default:
@@ -153,7 +153,7 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
   P_N_all.topLeftCorner(n_common, n_common) = P_N.at(0).topLeftCorner(n_common, n_common);
   P_N_all.bottomRightCorner(n_common, n_common) = P_N.at(1).topLeftCorner(n_common, n_common);
   // commonから探索する．
-  for (int ch = 0; ch < observed_gnss_sat_ids_.at(2).size(); ch++)
+  for (int ch = 0; ch < n_common; ch++)
   {
     const int gnss_id = observed_gnss_sat_ids_.at(2).at(ch);
     // SDCP計算するときにまとめてやりたい気持ちはあるな，chを記録しておけばいいだけな気はする．
@@ -175,7 +175,7 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
   // 2回目以降は解けている解をベースに実施していくべき．
   int ref_index;
   const int ref_index_candidate = GetIndexOfStdVector(vec_N_.at(0)->is_fixed, true);
-  if (ref_index_candidate >= 0 && ref_index_candidate < vec_N_.at(0)->is_fixed.size())
+  if (ref_index_candidate >= 0 && ref_index_candidate < n_common) // vec_N_.at(0)->is_fixed.size()
   {
     ref_index = ref_index_candidate;
   }
@@ -581,5 +581,16 @@ void PBD_Lambda::RecoverNoDifference(const int fixed_num)
       vec_N_.at(1)->is_fixed.at(target_ch) = false;
     }
   }
+
+#ifdef LAMBDA_DEBUG
+  // gnss_idsの数以上の部分はそもそも入ってないのでfalseに落とす（念のため）．
+  for (int j = gnss_ids_.size(); j < vec_N_.at(0)->N.size(); j++)
+  {
+    vec_N_.at(0)->is_fixed.at(j) = false;
+    vec_N_.at(1)->is_fixed.at(j) = false;
+    std::cout << vec_N_.at(0)->N.at(j) << std::endl;
+    std::cout << vec_N_.at(1)->N.at(j) << std::endl;
+  }
+#endif // LAMBDA_DEBUG
 }
 

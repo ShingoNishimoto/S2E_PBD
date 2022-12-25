@@ -110,25 +110,34 @@ void PCVEstimation::UpdateReferenceSat(const int count, int& ref_gnss_ch, const 
 }
 
 // 更新が入った時だけtrueを返す．
-const bool PCVEstimation::Update(const Eigen::MatrixXd& W, PhaseCenterCorrection* pcc)
+const bool PCVEstimation::Update(const Eigen::MatrixXd& W, PhaseCenterCorrection* pcc, const double elapsed_time)
 {
+  bool result = false;
   switch (method_)
   {
   case PCV_METHOD::SPHERE:
     // return WeightedLeastSquare(W, azi_increment, ele_increment);
     // Wを実際のものにするとうまく行かないので一旦単位行列で実施する．
-    return WeightedLeastSquare(Eigen::MatrixXd::Identity(W.rows(), W.cols()), pcc->azi_increment_, pcc->ele_increment_);
+    result = WeightedLeastSquare(Eigen::MatrixXd::Identity(W.rows(), W.cols()), pcc->azi_increment_, pcc->ele_increment_);
+    break;
 
   case PCV_METHOD::ZERNIKE:
     // TODO
-    return false;
+    break;
 
   case PCV_METHOD::RESIDUAL:
-    return ResidualBasedUpdate(W, pcc);
+    result = ResidualBasedUpdate(W, pcc);
+    break;
 
   default:
     return false;
   }
+
+  if (result)
+  {
+    std::cout << "PCV updated! at " << elapsed_time << std::endl;
+  }
+  return result;
 }
 
 void PCVEstimation::SphericalHarmonicsInitialization(const std::string fname)
@@ -279,6 +288,7 @@ const bool PCVEstimation::WeightedLeastSquare(const Eigen::MatrixXd& W, const do
   // std::cout << "V" << V_ << std::endl;
   // std::cout << "W" << W_ << std::endl;
 
+  static double ddcp_res_thresh = 1e-4;
   if (new_size >= wsl_data_num_)
   {
     // Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(W_);
@@ -313,11 +323,12 @@ const bool PCVEstimation::WeightedLeastSquare(const Eigen::MatrixXd& W, const do
     {
       CS_vec_ = CS;
       SetPcvVecFromSHModel(azi_increment, ele_increment);
-      // 収束判定はどうする？
-      // if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
-      // {
-      //   pcv_fixed_ = true;
-      // }
+      // 収束判定の閾値はどうする？
+      if (post_acc < ddcp_res_thresh) // pre_acc < ddcp_res_thresh &&
+      {
+        pcv_fixed_ = true;
+        ddcp_res_thresh *= 0.8;
+      }
       InitializeVHW();
       return true;
     }

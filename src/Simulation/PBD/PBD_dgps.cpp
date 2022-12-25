@@ -26,7 +26,7 @@
 
 #define NUM_SAT (2)
 #define NUM_STATE (NUM_SINGLE_STATE * NUM_SAT)
-#define NUM_GNSS_CH (12)
+#define NUM_GNSS_CH (15) // 12
 #define NUM_OBSERVABLES (NUM_GNSS_CH * 3)
 #define NUM_SINGLE_STATE_ALL (NUM_SINGLE_STATE + NUM_GNSS_CH)
 // #define NUM_STATE_ALL (NUM_SINGLE_STATE_ALL * NUM_SAT)
@@ -211,34 +211,17 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     P_ = UpdateP(); // 誤差共分散行列を更新
 #endif // TIME_UPDATE_DEBUG
 
-    for (int i = 0; i < 2; i++)
-    {
-      pre_visible_gnss_nums_.at(i) = visible_gnss_nums_.at(i);
-    }
-    visible_gnss_nums_.clear();
-    gnss_observations_.clear();
-
+    // 最初からコピーで受け取ればいい気がする．
     PBD_GnssObservation main_observation = main_observation_;
     PBD_GnssObservation target_observation = target_observation_;
-    gnss_observations_.push_back(main_observation); // 参照しない方がいい．
-    gnss_observations_.push_back(target_observation);
+    UpdateNumOfState(main_observation, target_observation);
 
-    visible_gnss_nums_.push_back(main_observation_.GetNowVisibleGnssNum());
-    visible_gnss_nums_.push_back(target_observation_.GetNowVisibleGnssNum());
     int n_main = pre_visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
     Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
     int n_target = pre_visible_gnss_nums_.at(1);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
     Eigen::MatrixXd Q_target = Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
-
-    // 共通衛星見つける
-    FindCommonObservedGnss(std::make_pair(0, 1));
-    visible_gnss_nums_.push_back(common_observed_gnss_sat_id.size());
-
-    num_observables_ = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + visible_gnss_nums_.at(2);
-    num_main_state_all_ = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
-    num_state_all_ = NUM_STATE + visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
 
     UpdateBiasForm(0, x_est_main, P_main, Q_main);
     UpdateBiasForm(1, x_est_target, P_target, Q_target);
@@ -269,13 +252,12 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       // 推定完了したら実施しない．
       if (!pcc_estimate_.GetEstimationFinish())
       {
-        const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))));
+        const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))), elapsed_time);
         if (updated) KalmanFilter();
       }
     }
     // この後に観測更新を実施するステップを再度設けるべき，でないと推定前の位置に基づく速度，加速度情報で伝搬することになり，次の観測更新までに誤差が蓄積してしまう．
   #endif // PCC
-    // PCC
 
 #ifndef TIME_UPDATE_DEBUG
     InitializePhi();
@@ -850,18 +832,16 @@ void PBD_dgps::KalmanFilter()
 #ifdef REDUCED_DYNAMIC
                 x_est_main.acceleration,
 #endif
-                ConvStdVecToEigenVec(x_est_main.ambiguity.N),
+                ConvStdVecToEigenVec(x_est_main.ambiguity.N).topRows(visible_gnss_nums_.at(0)),
                 x_est_target.position, x_est_target.clock, x_est_target.velocity,
 #ifdef REDUCED_DYNAMIC
                 x_est_target.acceleration,
 #endif
-                ConvStdVecToEigenVec(x_est_target.ambiguity.N);
+                ConvStdVecToEigenVec(x_est_target.ambiguity.N).topRows(visible_gnss_nums_.at(1));
 
   z_ = Eigen::VectorXd::Zero(num_observables_);  // 観測ベクトル
   hx_ = Eigen::VectorXd::Zero(num_observables_); // 観測モデル行列
   H_ = Eigen::MatrixXd::Zero(num_observables_, num_state_all_); // 観測行列（dhx/dx）
-  pre_Rv_ = Eigen::VectorXd::Zero(num_observables_); // 観測誤差共分散．
-  for (int i = 0; i < num_observables_; i++) pre_Rv_(i) = R_(i, i); // このままだと観測衛星数が変わる場合に対応できない．
   UpdateObservations(z_, hx_, H_, pre_Rv_);
 
   //カルマンゲイン
@@ -901,12 +881,17 @@ void PBD_dgps::KalmanFilter()
   // GRAPHIC*2 + SDCPにする．
   hx_ = Eigen::VectorXd::Zero(num_observables_); // リセット
 
-  for (int i = 0; i < num_observables_; i++) pre_Rv_(i) = R_(i, i); // このままだと観測衛星数が変わる場合に対応できない．
+  // これ入れると観測衛星数が変化した時にzとhxのindexずれが発生する?
+  UpdateNumOfState(gnss_observations_.at(0), gnss_observations_.at(1));
+  // ちゃんと修正するなら，ここでinfoの方も更新してしまえばいい．
+  Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
   UpdateObservations(z_, hx_, H_, pre_Rv_);
+  const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
+  R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
 
-  Eigen::VectorXd E_post = z_ - hx_;
-  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() + H*P_*H.transpose()); // residual based R_-adaptation
-  R_ = alpha * R_ + (1 - alpha) * E_post*E_post.transpose(); // residual based R_-adaptation
+  Eigen::VectorXd E_post = z_ - hx_; // ここじゃない？
+  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() - H*P_*H.transpose()); // residual based R_-adaptation <- これでするとめっちゃずれる．
+  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose()); // residual based R_-adaptation
   Eigen::MatrixXd Q_dash = alpha * Q_ + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
 
   DynamicNoiseScaling(Q_dash, H_);
@@ -925,6 +910,14 @@ void PBD_dgps::ClearGnssObserveModels(GnssObserveModel& observed_model)
   observed_model.geometric_range.clear();
   observed_model.pseudo_range_model.clear();
   observed_model.carrier_phase_model.clear();
+}
+
+void PBD_dgps::InitGnssObserveModels(GnssObserveModel& observed_model, const int gnss_num)
+{
+  // サイズの確保だけ実施．
+  observed_model.geometric_range.assign(gnss_num, 0.0);
+  observed_model.pseudo_range_model.assign(gnss_num, 0.0);
+  observed_model.carrier_phase_model.assign(gnss_num, 0.0);
 }
 
 Eigen::MatrixXd PBD_dgps::CalculateK(Eigen::MatrixXd H)
@@ -1025,17 +1018,17 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   // ここら辺はGnssObserveModel内に格納する．
   // libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
   double geometric_range = gnss_observation.CalculateGeometricRange(gnss_sat_id, sat_position);
-  observe_model.geometric_range.push_back(geometric_range);
-  if (observe_model.geometric_range.size() != (index + 1)) abort();
+  observe_model.geometric_range.at(index) = geometric_range; // ちゃんとindexで格納する．
+  // if (observe_model.geometric_range.size() != (index + 1)) abort();
 
   double pseudo_range_model = gnss_observation.CalculatePseudoRange(gnss_sat_id, sat_position, sat_clock);
-  observe_model.pseudo_range_model.push_back(pseudo_range_model);
-  if (observe_model.pseudo_range_model.size() != (index + 1)) abort();
+  observe_model.pseudo_range_model.at(index) = pseudo_range_model;
+  // if (observe_model.pseudo_range_model.size() != (index + 1)) abort();
 
   const double pcc = x_est.pcc->GetPCC_m(gnss_observation.GetGnssAzimuthDeg(index), gnss_observation.GetGnssElevationDeg(index));
   double carrier_phase_model = gnss_observation.CalculateCarrierPhase(gnss_sat_id, sat_position, sat_clock, x_est.ambiguity.N.at(index), L1_lambda, pcc);
-  observe_model.carrier_phase_model.push_back(carrier_phase_model);
-  if (observe_model.carrier_phase_model.size() != (index + 1)) abort();
+  observe_model.carrier_phase_model.at(index) = carrier_phase_model;
+  // if (observe_model.carrier_phase_model.size() != (index + 1)) abort();
 
   // GRAPHIC
   const int row_offset = N_offset + index;
@@ -1059,7 +1052,7 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
 
 void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen::MatrixXd& H, Eigen::VectorXd& Rv)
 {
-  const int common_index = GetIndexOfStdVector<int>(common_observed_gnss_sat_id, gnss_sat_id);
+  const int common_index = GetIndexOfStdVector<int>(common_observed_gnss_sat_id_, gnss_sat_id);
   const int row_offset = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + common_index;
   PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   PBD_GnssObservation& target_observation = gnss_observations_.at(1);
@@ -1068,7 +1061,6 @@ void PBD_dgps::UpdateObservationsSDCP(const int gnss_sat_id, Eigen::VectorXd& z,
   const int target_index = GetIndexOfStdVector<int>(target_observation.info_.now_observed_gnss_sat_id, gnss_sat_id);
   const int col_offset_main = NUM_SINGLE_STATE + main_index;
   const int col_offset_target = NUM_STATE + visible_gnss_nums_.at(0) + target_index;
-  const int num_main_state_all_ = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
 
   // とりあえずL1を使う．
   // main
@@ -1109,32 +1101,38 @@ void PBD_dgps::UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen
   // FIXME: このアクセス方法では汎用性は低い．
   const GnssObserveInfo& main_info_ = gnss_observations_.at(0).info_;
   const GnssObserveInfo& target_info_ = gnss_observations_.at(1).info_;
+
+  InitGnssObserveModels(gnss_observed_models_.at(0), visible_gnss_nums_.at(0));
+  InitGnssObserveModels(gnss_observed_models_.at(1), visible_gnss_nums_.at(1));
+
   std::vector<int> all_observed_gnss_ids = main_info_.now_observed_gnss_sat_id;
   all_observed_gnss_ids.insert(all_observed_gnss_ids.end(), target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end()); // concate
   sort(all_observed_gnss_ids.begin(), all_observed_gnss_ids.end());
   all_observed_gnss_ids.erase(unique(all_observed_gnss_ids.begin(), all_observed_gnss_ids.end()), all_observed_gnss_ids.end()); // unique
 
+  // ここはsortされているのでidの順がnow_gnss_ids_とかとずれている．
   for (const int& id : all_observed_gnss_ids)
   {
     auto it_main = std::find(main_info_.now_observed_gnss_sat_id.begin(), main_info_.now_observed_gnss_sat_id.end(), id);
     if (it_main != main_info_.now_observed_gnss_sat_id.end() && *it_main == id)
     {
       UpdateObservationsGRAPHIC(0, x_est_main, id, z, hx, H, Rv, 0);
-      AdjustReceiveCovariance(main_info_.now_observed_gnss_sat_id, main_info_.pre_observed_gnss_sat_id, id, 0, Rv);
+      // 2回目以降はここのpreがずれておかしくなってそう．SDCPはあってそうやけどGRAPHICはずれる
+      AdjustReceiveCovariance(main_info_.now_observed_gnss_sat_id, main_info_.pre_observed_gnss_sat_id, id, 0, 0, Rv);
     }
     // if target
     auto it_target = std::find(target_info_.now_observed_gnss_sat_id.begin(), target_info_.now_observed_gnss_sat_id.end(), id);
     if (it_target != target_info_.now_observed_gnss_sat_id.end() && *it_target == id)
     {
       UpdateObservationsGRAPHIC(1, x_est_target, id, z, hx, H, Rv, visible_gnss_nums_.at(0));
-      AdjustReceiveCovariance(target_info_.now_observed_gnss_sat_id, target_info_.pre_observed_gnss_sat_id, id, visible_gnss_nums_.at(0), Rv);
+      AdjustReceiveCovariance(target_info_.now_observed_gnss_sat_id, target_info_.pre_observed_gnss_sat_id, id, visible_gnss_nums_.at(0), pre_visible_gnss_nums_.at(0), Rv);
     }
     // if common
-    auto it_common = std::find(common_observed_gnss_sat_id.begin(), common_observed_gnss_sat_id.end(), id);
-    if (it_common != common_observed_gnss_sat_id.end() && *it_common == id)
+    auto it_common = std::find(common_observed_gnss_sat_id_.begin(), common_observed_gnss_sat_id_.end(), id);
+    if (it_common != common_observed_gnss_sat_id_.end() && *it_common == id)
     {
       UpdateObservationsSDCP(id, z, hx, H, Rv);
-      AdjustReceiveCovariance(common_observed_gnss_sat_id, main_info_.pre_observed_gnss_sat_id, id, visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1), Rv);
+      AdjustReceiveCovariance(common_observed_gnss_sat_id_, pre_common_observed_gnss_sat_id_, id, visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1), pre_visible_gnss_nums_.at(0) + pre_visible_gnss_nums_.at(1), Rv);
     }
   }
 }
@@ -1143,25 +1141,23 @@ void PBD_dgps::UpdateObservations(Eigen::VectorXd& z, Eigen::VectorXd& hx, Eigen
 void PBD_dgps::FindCommonObservedGnss(const std::pair<int, int> sat_id_pair)
 {
   // 初期化
-  common_observed_gnss_sat_id.clear();
+  common_observed_gnss_sat_id_.clear();
   common_observed_status.assign(num_of_gnss_satellites_, false);
   const int main_sat_id = sat_id_pair.first;
   const int target_sat_id = sat_id_pair.second;
   int common_index = 0;
 
-  const PBD_GnssObservation& main_observation_ = gnss_observations_.at(main_sat_id);
-  const PBD_GnssObservation& target_observation_ = gnss_observations_.at(target_sat_id);
   // ここはiterで取得でいいのかも？
   for (int i = 0; i < visible_gnss_nums_.at(0); ++i)
   {
     for (int j = 0; j < visible_gnss_nums_.at(1); ++j)
     {
       // ここでずれている？
-      int gnss_sat_id = main_observation_.info_.now_observed_gnss_sat_id.at(i);
+      int gnss_sat_id = gnss_observations_.at(main_sat_id).info_.now_observed_gnss_sat_id.at(i);
       // どっかで複数衛星にも拡張
-      if (gnss_sat_id == target_observation_.info_.now_observed_gnss_sat_id.at(j))
+      if (gnss_sat_id == gnss_observations_.at(target_sat_id).info_.now_observed_gnss_sat_id.at(j))
       {
-        common_observed_gnss_sat_id.push_back(gnss_sat_id);
+        common_observed_gnss_sat_id_.push_back(gnss_sat_id);
         common_observed_status.at(gnss_sat_id) = true;
         // common_index_dict.at(gnss_sat_id) = common_index; // このindexはほんまに必要なのか？
         ++common_index;
@@ -1304,7 +1300,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
     if (now_index >= NUM_GNSS_CH || pre_index >= NUM_GNSS_CH) break; // ch以上の受信は出来ない
   }
 
-  // N_trueの更新が必要
+  // 見えてない部分のN_trueは0に落とす．
   for (int i = visible_gnss_nums_.at(sat_id); i < NUM_GNSS_CH; i++)
   {
     sat_info_.at(sat_id).true_N(i) = 0;
@@ -1312,7 +1308,7 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
 }
 
 // もう少しうまくやりたい．
-void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv)
+void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const int pre_base_offset, const Eigen::VectorXd& pre_Rv)
 {
   const int now_index = GetIndexOfStdVector(now_gnss_sat_ids, gnss_sat_id);
   const int offset = base_offset + now_index;
@@ -1322,15 +1318,62 @@ void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids,
   if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) != pre_gnss_sat_ids.end())
   {
     const int pre_index = GetIndexOfStdVector(pre_gnss_sat_ids, gnss_sat_id);
-    R_(offset, offset) = pre_Rv(base_offset + pre_index); // 対角以外はリセットした方がいい？
+    R_(offset, offset) = pre_Rv(pre_base_offset + pre_index); // 対角以外はリセットした方がいい？
   }
   else
   {
-    // GRAPHIC
-    if (base_offset <= NUM_GNSS_CH) R_(offset, offset) = pow(pseudo_sigma, 2.0) + pow(carrier_sigma, 2.0);
+    // GRAPHIC offsetがmainの観測衛星数以下であればGRAPHIC
+    if (base_offset <= visible_gnss_nums_.at(0)) R_(offset, offset) = pow(pseudo_sigma, 2.0) + pow(carrier_sigma, 2.0);
     // SDCP
     else R_(offset, offset) = 2.0 * pow(carrier_sigma, 2.0);
   }
+}
+
+void PBD_dgps::UpdateNumOfState(PBD_GnssObservation main_observation, PBD_GnssObservation target_observation)
+{
+  int offset = 0;
+  pre_Rv_.resize(num_observables_);
+  for (int i = 0; i < 3; i++)
+  {
+    pre_visible_gnss_nums_.at(i) = visible_gnss_nums_.at(i);
+    for (int j = 0; j < pre_visible_gnss_nums_.at(i); j++)
+    {
+      int pos = offset + j;
+      pre_Rv_(pos) = R_(pos, pos);
+    }
+    offset += pre_visible_gnss_nums_.at(i);
+  }
+  visible_gnss_nums_.clear();
+  gnss_observations_.clear();
+
+  gnss_observations_.push_back(main_observation); // 参照しない方がいい．
+  gnss_observations_.push_back(target_observation);
+
+  visible_gnss_nums_.push_back(main_observation.GetNowVisibleGnssNum());
+  visible_gnss_nums_.push_back(target_observation.GetNowVisibleGnssNum());
+
+  // // for debug
+  // if (pre_visible_gnss_nums_.at(0) > visible_gnss_nums_.at(0))
+  // {
+  //   std::cout << "decreased: " << pre_visible_gnss_nums_.at(0) - visible_gnss_nums_.at(0) << std::endl;
+  // }
+
+  // 共通衛星見つける
+  pre_common_observed_gnss_sat_id_ = common_observed_gnss_sat_id_; // copy
+  FindCommonObservedGnss(std::make_pair(0, 1));
+  visible_gnss_nums_.push_back(common_observed_gnss_sat_id_.size());
+
+  // // for debug
+  // if (visible_gnss_nums_.at(2) < NUM_GNSS_CH)
+  // {
+  //   std::cout << visible_gnss_nums_.at(2) << std::endl;
+  // }
+
+  num_observables_ = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + visible_gnss_nums_.at(2);
+  num_main_state_all_ = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
+  num_state_all_ = NUM_STATE + visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
+
+  R_.resize(num_observables_, num_observables_); // conservative使うと増えたときに変な値が入るので0クリアしてしまう．
 }
 
 template <typename T> bool PBD_dgps::CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b)
@@ -1360,11 +1403,11 @@ void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
   Phi_all(num_main_state_all_ + 3, num_main_state_all_ + 3) = 0.0;
 #endif // CLOCK_IS_WHITE_NOISE
 
-  // a
-#ifdef REDUCED_DYNAMIC
-  Phi_all.block(7, 7, 3, 3) = CalculatePhi_a(observe_step_time);
-  Phi_all.block(num_main_state_all_ + 7, num_main_state_all_ + 7, 3, 3) = CalculatePhi_a(observe_step_time);
-#endif // REDUCED_DYNAMIC
+//   // a
+// #ifdef REDUCED_DYNAMIC
+//   Phi_all.block(7, 7, 3, 3) = CalculatePhi_a(observe_step_time);
+//   Phi_all.block(num_main_state_all_ + 7, num_main_state_all_ + 7, 3, 3) = CalculatePhi_a(observe_step_time);
+// #endif // REDUCED_DYNAMIC
 
   // 観測更新後のPに対して行う．
   Eigen::MatrixXd P_dash = Phi_all * P_ * Phi_all.transpose() + Q_dash;
@@ -1398,7 +1441,7 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
     vec_P_N.push_back(P_N_target);
     std::vector<Ambiguity> vec_N_cpy{x_est_main.ambiguity, x_est_target.ambiguity}; // 失敗した時に戻す用
     std::vector<Ambiguity*> vec_N{&(x_est_main.ambiguity), &(x_est_target.ambiguity)};
-    std::vector<std::vector<int>> observed_gnss_ids{gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_observations_.at(1).info_.now_observed_gnss_sat_id, common_observed_gnss_sat_id}; // ちょっと煩雑やけどまあ．．
+    std::vector<std::vector<int>> observed_gnss_ids{gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_observations_.at(1).info_.now_observed_gnss_sat_id, common_observed_gnss_sat_id_}; // ちょっと煩雑やけどまあ．．
 
     PBD_Lambda lambda(vec_N, vec_P_N, observed_gnss_ids, NUM_SINGLE_STATE);
     lambda_result = lambda.Solve(METHOD::PAR_ILS);
@@ -1411,20 +1454,39 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
       b_hat << x_update.topRows(NUM_SINGLE_STATE), x_update.block(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), 0, NUM_SINGLE_STATE, 1);
       Eigen::VectorXd b_fixed = b_hat - P_fixed.block(0, NUM_STATE, NUM_STATE, visible_gnss_nums_.at(2) - 1) * P_fixed.bottomRightCorner(visible_gnss_nums_.at(2) - 1, visible_gnss_nums_.at(2) - 1).inverse() * (lambda.N_hat_ - lambda.N_);
       Eigen::VectorXd x_fixed_all(NUM_STATE + visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1));
-      x_fixed_all << b_fixed.topRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(0)->N), b_fixed.bottomRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(1)->N);
+      x_fixed_all << b_fixed.topRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(0)->N).topRows(visible_gnss_nums_.at(0)), b_fixed.bottomRows(NUM_SINGLE_STATE), ConvStdVecToEigenVec(vec_N.at(1)->N).topRows(visible_gnss_nums_.at(1));
       // 代入
       GetStateFromVector(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), x_fixed_all); // Nはポインタで渡しているので必要なし．
 
       // 残差確認
       hx_ = Eigen::VectorXd::Zero(num_observables_); // 観測モデル行列
+      UpdateNumOfState(gnss_observations_.at(0), gnss_observations_.at(1));
+        Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
       UpdateObservations(z_, hx_, H_, pre_Rv_); // 更新するのはSDCPだけでいいので無駄．
+      const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
+      R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
       Eigen::MatrixXd E_post_lambda = z_ - hx_;
       if ((abs(E_post_lambda.bottomRows(visible_gnss_nums_.at(2)).array()) > L1_lambda).any()) // SDCPだけを確認する．
       {
         std::cout << "false integer!" << std::endl;
+        // std::cout << E_post_lambda.bottomRows(visible_gnss_nums_.at(2)) << std::endl;
         GetStateFromVector(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), x_update); // 戻す．
-        x_est_main.ambiguity = vec_N_cpy.at(0); // falseにセットしないとダメそう．
+        x_est_main.ambiguity = vec_N_cpy.at(0);
         x_est_target.ambiguity = vec_N_cpy.at(1);
+        // 全部falseにする．<- FIXME: 全部する必要はない気がする．
+        x_est_main.ambiguity.is_fixed.assign(NUM_GNSS_CH, false);
+        x_est_target.ambiguity.is_fixed.assign(NUM_GNSS_CH, false);
+        // 対角成分だけ初期化．
+        for (int i = 0; i < visible_gnss_nums_.at(0); i++)
+        {
+          P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(sigma_N_ini, 2.0);
+          Q_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(sigma_N_process, 2.0);
+        }
+        for (int i = 0; i < visible_gnss_nums_.at(1); i++)
+        {
+          P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(sigma_N_ini, 2.0);
+          Q_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(sigma_N_process, 2.0);
+        }
         lambda_result = false;
       }
       else
@@ -1458,7 +1520,7 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
 
 
 // クラスが肥大化してしまっているので分割したい．
-const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
+const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, const double elapsed_time)
 {
   const PBD_GnssObservation& main_observation = gnss_observations_.at(0);
   const std::vector<GnssInfo> main_vec_gnssinfo = main_observation.GetReceiver()->GetGnssInfoVec();
@@ -1472,7 +1534,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
 
   int ref_gnss_ch;
-  const int visible_ch_num = common_observed_gnss_sat_id.size();
+  const int visible_ch_num = common_observed_gnss_sat_id_.size();
   Eigen::MatrixXd R_sdcp = R_.bottomRightCorner(visible_ch_num, visible_ch_num);
   Eigen::VectorXd Rv_sdcp(visible_ch_num);
 
@@ -1483,7 +1545,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   pcc_estimate_.InitializeRefInfo();
   for (int ch = 0; ch < visible_ch_num; ch++)
   {
-    const int gnss_id = common_observed_gnss_sat_id.at(ch);
+    const int gnss_id = common_observed_gnss_sat_id_.at(ch);
     const int main_ch = GetIndexOfStdVector<int>(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
     const int target_ch = GetIndexOfStdVector<int>(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
 
@@ -1556,7 +1618,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec)
   // std::cout << "W" << W << std::endl;
 
   // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
-  return pcc_estimate_.Update(W);
+  return pcc_estimate_.Update(W, elapsed_time);
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all_, const Eigen::VectorXd& x_state)

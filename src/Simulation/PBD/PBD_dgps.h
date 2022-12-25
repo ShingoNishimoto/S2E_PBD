@@ -93,12 +93,13 @@ private:
   std::vector<SatelliteInfo> sat_info_;
 
   std::vector<int> visible_gnss_nums_{0, 0, 0}; // main, target, common
-  std::vector<int> pre_visible_gnss_nums_{0, 0}; // main, target
+  std::vector<int> pre_visible_gnss_nums_{0, 0, 0}; // main, target
 
   //初期化をもっとスマートにできるように考える
   //ここら辺も構造体にまとめるか．
   std::vector<bool> common_observed_status{};
-  std::vector<int> common_observed_gnss_sat_id{};
+  std::vector<int> common_observed_gnss_sat_id_{};
+  std::vector<int> pre_common_observed_gnss_sat_id_{};
 
   // air drag ballistic coefficient
   const double Cd = 2.928e-14 / 5; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．これも推定した方がいい気はする．
@@ -157,15 +158,17 @@ private:
   void FindCommonObservedGnss(const std::pair<int, int> sat_id_pair);
   void UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen::MatrixXd& P, Eigen::MatrixXd& Q);
   void ClearGnssObserveModels(GnssObserveModel& observed_model);
+  void InitGnssObserveModels(GnssObserveModel& observed_model, const int gnss_num);
   Eigen::Vector3d ConvReceivePosToCenterOfMass(Eigen::Vector3d rec_pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
-  void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const Eigen::VectorXd& pre_Rv);
+  void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const int pre_base_offset, const Eigen::VectorXd& pre_Rv);
+  void UpdateNumOfState(PBD_GnssObservation main_observation, PBD_GnssObservation target_observation);
 
 // 整数不定性解除
   const bool IntegerAmbiguityResolution(const Eigen::VectorXd& x_update);
 
   // PCO, PCV関連
-  const bool EstimateRelativePCC(const std::vector<double> sdcp_vec);
+  const bool EstimateRelativePCC(const std::vector<double> sdcp_vec, const double elapsed_time);
 
   // 便利関数関連
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);

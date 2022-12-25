@@ -21,7 +21,7 @@ class PCCEstimation
   const bool CheckDataForEstimation(const int count, int& ref_gnss_ch, const double elevation_deg, const double r_sdcp);
   inline const bool GetEstimationFinish(void) const { return estimation_finish_; }
   void InitializeRefInfo(void);
-  const bool Update(const Eigen::MatrixXd& W); // const Eigen::VectorXd& V,
+  const bool Update(const Eigen::MatrixXd& W, const double elapsed_time);
 
   bool data_available_ = false;
 

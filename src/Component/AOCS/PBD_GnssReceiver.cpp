@@ -137,8 +137,11 @@ void PBD_GNSSReceiver::CheckAntennaCone(const Vector<3> pos_true_eci_, Quaternio
         SetStockedGnssInfo(ant2gnss_i, q_i2b, id_tmp);
       }
     }
-    if (gnss_sats_visible_num_ >= ch_max_) break; // 一旦ch以上は観測しないようにbreakする．もう少しちゃんとした選択アルゴリズムを実装する．
+    // if (gnss_sats_visible_num_ >= ch_max_) break; // 一旦ch以上は観測しないようにbreakする．TODO: もう少しちゃんとした選択アルゴリズムを実装する．
   }
+
+  // for debug
+  // std::cout << "visible num: " << gnss_sats_visible_num_ + vec_stocked_gnss_info_.size() << std::endl;
 
   if (gnss_sats_visible_num_ < ch_max_)
   {

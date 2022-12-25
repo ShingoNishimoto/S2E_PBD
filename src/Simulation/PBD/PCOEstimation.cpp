@@ -36,10 +36,10 @@ const bool PCOEstimation::CheckDataForEstimation(const int count, int& ref_gnss_
 }
 
 // template <typename T, size_t N>
-const bool PCOEstimation::DpcoInitialEstimation(const Eigen::MatrixXd& W)
+const bool PCOEstimation::DpcoInitialEstimation(const Eigen::MatrixXd& W, const double elapsed_time)
 {
   static int epoch_count = 0;
-  const double ddcp_res_thresh = 1e-4;
+  static double ddcp_res_thresh = 1e-4; // この辺は観測誤差のオーダー以下にはできないことに注意する．
 
   const int N = W.rows();
   const int current_size = W_.rows();
@@ -91,8 +91,9 @@ const bool PCOEstimation::DpcoInitialEstimation(const Eigen::MatrixXd& W)
       // 大体0.1mm以下の精度になったら収束判定をする．<- これはなぜこの値にしたのかをもう少し定量的に説明したい．PCOの推定精度は1mm以下を目指していて残差で評価するとこれくらいに相当するから，的な．
       if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
       {
-        std::cout << "PCO fixed!" << std::endl;
+        std::cout << "PCO fixed! at " << elapsed_time << std::endl;
         pco_fixed_ = true;
+        ddcp_res_thresh *= 0.8; // より厳しくする．
       }
       return true;
     }
