@@ -288,6 +288,7 @@ const bool PCVEstimation::WeightedLeastSquare(const Eigen::MatrixXd& W, const do
   // std::cout << "V" << V_ << std::endl;
   // std::cout << "W" << W_ << std::endl;
 
+  static double ddcp_res_thresh = 1e-4;
   if (new_size >= wsl_data_num_)
   {
     // Eigen::FullPivLU<Eigen::MatrixXd> lu_decomp(W_);
@@ -322,11 +323,12 @@ const bool PCVEstimation::WeightedLeastSquare(const Eigen::MatrixXd& W, const do
     {
       CS_vec_ = CS;
       SetPcvVecFromSHModel(azi_increment, ele_increment);
-      // 収束判定はどうする？
-      // if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
-      // {
-      //   pcv_fixed_ = true;
-      // }
+      // 収束判定の閾値はどうする？
+      if (post_acc < ddcp_res_thresh) // pre_acc < ddcp_res_thresh &&
+      {
+        pcv_fixed_ = true;
+        ddcp_res_thresh *= 0.8;
+      }
       InitializeVHW();
       return true;
     }

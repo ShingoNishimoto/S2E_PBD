@@ -42,6 +42,7 @@ class PCVEstimation
   // const bool CheckDataForEstimation(const int count, int& ref_gnss_ch, const double r_sdcp, const double elevation_deg);
   void UpdateReferenceSat(const int count, int& ref_gnss_ch, const double r_sdcp, const double elevation_deg);
   inline const bool GetPcvFixed(void) const { return pcv_fixed_; }
+  void SetPcvFixed(bool is_fixed) { pcv_fixed_ = is_fixed; }
   const bool Update(const Eigen::MatrixXd& W, PhaseCenterCorrection* pcc, const double elapsed_time);
   inline void ResizeHV(const int count) { if (method_ == PCV_METHOD::SPHERE) { H_.conservativeResize((int)H_.rows() + count - 1 , (degree_ + 2) * (degree_ + 1)); V_.conservativeResize((int)V_.rows() + count - 1); } } // この辺の処理は汎化したい．
 

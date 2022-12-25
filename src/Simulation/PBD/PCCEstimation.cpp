@@ -66,6 +66,8 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
     if (pco_estimate_.DpcoInitialEstimation(W, elapsed_time))
     {
       pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
+      // fixしたらpcvのフラグを変える．
+      if (pco_estimate_.GetPcoFixed()) pcv_estimate_.SetPcvFixed(false);
       return true;
     }
   }
@@ -77,6 +79,8 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
        // ステップごとに保存できるようにしたい．
       pcc_->PcvLogOutput(pcc_->out_fname_base_ + "_pcv.csv");
       pcc_->PccLogOutput(pcc_->out_fname_base_ + "_pcc.csv");
+      // fixしたらpcoのフラグを変えて再度推定を行わせる．
+      if (pcv_estimate_.GetPcvFixed()) pco_estimate_.SetPcoFixed(false);
       return true;
     }
   }
