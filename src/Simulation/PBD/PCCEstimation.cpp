@@ -5,6 +5,8 @@
 #include <iomanip>
 #include "Interface/InitInput/IniAccess.h"
 
+// #define ITERATION
+
 PCCEstimation::PCCEstimation(PhaseCenterCorrection* pcc, const std::string fname): pcc_(pcc)
 {
   pco_estimate_ = PCOEstimation();
@@ -79,8 +81,15 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
        // ステップごとに保存できるようにしたい．
       pcc_->PcvLogOutput(pcc_->out_fname_base_ + "_pcv.csv");
       pcc_->PccLogOutput(pcc_->out_fname_base_ + "_pcc.csv");
+      if (pcv_estimate_.GetPcvFixed())
+      {
+#ifdef ITERATION
       // fixしたらpcoのフラグを変えて再度推定を行わせる．
-      if (pcv_estimate_.GetPcvFixed()) pco_estimate_.SetPcoFixed(false);
+       pco_estimate_.SetPcoFixed(false);
+#else
+      estimation_finish_ = true;
+#endif // ITERATION
+      }
       return true;
     }
   }

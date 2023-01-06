@@ -436,7 +436,11 @@ const bool PCVEstimation::ResidualBasedUpdate(const Eigen::MatrixXd& W, PhaseCen
   {
     const PCV_GnssDirection& dir = info.first;
     const int index = num_ele*res_azimuth_index_.at(dir.azimuth_) + res_elevation_index_.at(dir.elevation_);
-    for (const int& ch : info.second) weight_vec_.at(index).push_back(W(ch, ch));
+    for (const int& ch : info.second)
+    {
+      weight_vec_.at(index).push_back(W(ch, ch));
+    }
+    if (res_mm_vec_.at(index).size() != weight_vec_.at(index).size()) abort();
 
     // 一定数たまれば平均をとる．
     if (res_mm_vec_.at(index).size() >= RES_MEAN_DATA_NUM)

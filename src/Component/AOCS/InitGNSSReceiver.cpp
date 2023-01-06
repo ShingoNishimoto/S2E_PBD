@@ -85,7 +85,9 @@ bool ReadAntexTable(std::string file_name, const double d_azi, const double d_el
   std::getline(antex_file, line);
   std::istringstream streamline(line);
   // std::string description;
-  streamline >> pco[0] >> pco[1] >> pco[2]; // north, east, upであることを考慮して修正すべきでは？
+  streamline >> pco[1] >> pco[0] >> pco[2]; // north, east, upなのでy, x, zの順で入れる．
+  // streamline >> pco[0] >> pco[1] >> pco[2];
+  // pco[1] *= -1; // x, y, zの順で代入した場合はyはwestなので符号を反転．
 
   // NOAZI (skip)
   std::getline(antex_file, line);
