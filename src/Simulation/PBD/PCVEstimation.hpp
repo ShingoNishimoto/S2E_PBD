@@ -27,7 +27,9 @@ class PCV_GnssDirection
   // mapのkeyとして指定するために定義
   bool operator<(const PCV_GnssDirection& rhs) const
   {
-    return elevation_ < rhs.elevation_;
+    const int index = elevation_ * azimuth_ + elevation_;
+    const int rhs_index = rhs.elevation_ * rhs.azimuth_ + rhs.elevation_;
+    return index < rhs_index;
   }
 };
 

@@ -69,7 +69,7 @@ private:
 
   // Eigen::VectorXd x_true; // 状態量真値 for log
   // シンプルにここが参照になっていないからか．
-  std::vector<EstimatedVariables> x_est_; // 状態量ベクトル
+  std::vector<EstimatedVariables*> x_est_; // 状態量ベクトル
 
   std::vector<libra::Vector<3>> antenna_pos_b_;
   std::vector<PBD_GnssObservation> gnss_observations_{};
@@ -163,6 +163,7 @@ private:
   Eigen::Vector3d ConvCenterOfMassToReceivePos(Eigen::Vector3d pos, libra::Vector<3> antenna_pos_b, const Dynamics& dynamics);
   void AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids, const std::vector<int>& pre_gnss_sat_ids, const int gnss_sat_id, const int base_offset, const int pre_base_offset, const Eigen::VectorXd& pre_Rv);
   void UpdateNumOfState(PBD_GnssObservation main_observation, PBD_GnssObservation target_observation);
+  const double DataEditing(const int sat_id, Eigen::VectorXd z);
 
 // 整数不定性解除
   const bool IntegerAmbiguityResolution(const Eigen::VectorXd& x_update);

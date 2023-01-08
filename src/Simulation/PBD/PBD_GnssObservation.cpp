@@ -77,6 +77,8 @@ void PBD_GnssObservation::UpdateGnssObservation()
     observed_values_.L1_carrier_phase.push_back(l1_carrier_phase);
     observed_values_.L2_carrier_phase.push_back(l2_carrier_phase);
 
+    // 擬似距離の平均をとってクロック誤差を小さくするための処理をする．それをしないとそもそもなのでは？
+
     // true info
     Vector<3> gnss_position = gnss_satellites_.Get_true_info().GetSatellitePositionEci(gnss_sat_id);
     double gnss_clock = gnss_satellites_.Get_true_info().GetSatelliteClock(gnss_sat_id); // これはclock bias

@@ -36,13 +36,14 @@
 // #define TIME_UPDATE_DEBUG
 
 #define PCC
-
 #define LAMBDA_DEBUG
+// #define WITHOUT_REL_SENSOR
 
 #undef cross
 
 static const double PBD_DGPS_kConvNm2m = 1e-9;
 static const int precision = 15; // position
+static bool pcc_fixed = false;
 
 // template使っていい感じにしたい．
 // template <typename T> static void LogOutput(const )
@@ -76,14 +77,14 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
-  libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
+  libra::Vector<3> initial_pco(0); // initial_pco[2] = 120.0;
   x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
   // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
 
   pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
 
-  // x_est_.push_back(x_est_main);
-  // x_est_.push_back(x_est_target);
+  x_est_.push_back(&x_est_main);
+  x_est_.push_back(&x_est_target);
   sat_info_.push_back({main_dynamics, x_est_main, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(0)->pbd_components_});
   sat_info_.push_back({target_dynamics, x_est_target, Eigen::VectorXd::Zero(NUM_GNSS_CH), spacecrafts.at(1)->pbd_components_});
 
@@ -235,8 +236,11 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     P_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = P_target;
     Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = Q_target;
 
+    // 擬似距離をもとにclockを更新 <- ただ，初期の位置誤差の影響を受けてしまうのである程度収束してからにする．
+    // if (sqrt(P_main(0, 0)) < 0.1) x_est_main.clock(0) = DataEditing(0, ConvStdVecToEigenVec(gnss_observations_.at(0).observed_values_.L1_pseudo_range));
+    // if (sqrt(P_target(0, 0)) < 0.1) x_est_target.clock(0) = DataEditing(1, ConvStdVecToEigenVec(gnss_observations_.at(1).observed_values_.L1_pseudo_range));
     // EKF
-    KalmanFilter();
+    KalmanFilter(); // a priori solution
 
     // IAR
 #ifdef LAMBDA_DEBUG
@@ -254,6 +258,11 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       {
         const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))), elapsed_time);
         if (updated) KalmanFilter();
+      }
+      else
+      {
+        pcc_fixed = true;
+        // pcc_estimate_.SetEstimationFinish(false); // 相対位置センサなしに移す．// FIXME: コマンド的なもので制御できるようにしたい．
       }
     }
     // この後に観測更新を実施するステップを再度設けるべき，でないと推定前の位置に基づく速度，加速度情報で伝搬することになり，次の観測更新までに誤差が蓄積してしまう．
@@ -876,6 +885,11 @@ void PBD_dgps::KalmanFilter()
   P_ = tmp*P_*tmp.transpose() + K*R_*K.transpose(); // ここでNの部分にも入ってくる？
   // P_ = tmp*P_;
 
+  // data editing
+  // GRAPHICで実施
+  // x_est_main.clock(0) = DataEditing(0, z_.topRows(visible_gnss_nums_.at(0)));
+  // x_est_target.clock(0) = DataEditing(1, z_.block(visible_gnss_nums_.at(0), 0, visible_gnss_nums_.at(1), 1));
+
 #ifdef AKF
   // residual
   // GRAPHIC*2 + SDCPにする．
@@ -1014,7 +1028,7 @@ void PBD_dgps::UpdateObservationsGRAPHIC(const int sat_id, EstimatedVariables& x
   double carrier_phase_range = carrier_phase.first * x_est.lambda; // [m]で受け取る．
 
   libra::Vector<3> sat_position = ConvEigenVecToLibraVec<3>(x_est.position);
-  const double sat_clock = x_est.clock(0);
+  const double sat_clock = x_est.clock(0); // 結局ここで使用しているのは前ステップのclock情報．再度更新することで意味がある．
   // ここら辺はGnssObserveModel内に格納する．
   // libra::Vector<3> receive_pos = ConvEigenVecToLibraVec<3>(ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics));
   double geometric_range = gnss_observation.CalculateGeometricRange(gnss_sat_id, sat_position);
@@ -1386,6 +1400,26 @@ template <typename T> bool PBD_dgps::CheckVectorEqual(const std::vector<T>& a, c
     return true;
 }
 
+// a priori orbitとして論文にあるようにsmoothingの解を使うのがいいのかもしれない？
+const double PBD_dgps::DataEditing(const int sat_id, Eigen::VectorXd z)
+{
+  double cdt = 0;
+  const PBD_GnssObservation gnss_observation = gnss_observations_.at(sat_id);
+  for (int i = 0; i < visible_gnss_nums_.at(sat_id); i++)
+  {
+    const int gnss_id = gnss_observation.info_.now_observed_gnss_sat_id.at(i);
+    // 擬似距離の時はこれを使う．
+    const double ion_delay = gnss_observation.CalculateIonDelay(gnss_id, ConvEigenVecToLibraVec<3>(x_est_.at(sat_id)->position), L1_frequency);
+    // GRAPHICで実施すると不定性誤差の影響で死んだ？
+    // cdt += z(i) - gnss_observation.CalculateGeometricRange(gnss_id, ConvEigenVecToLibraVec<3>(x_est_.at(sat_id)->position)) + gnss_observation.observed_values_.gnss_clock.at(i) - 0.5 * x_est_.at(sat_id)->lambda * x_est_.at(sat_id)->ambiguity.N.at(i); // GRAPHIC
+    cdt += z(i) - gnss_observation.CalculateGeometricRange(gnss_id, ConvEigenVecToLibraVec<3>(x_est_.at(sat_id)->position)) + gnss_observation.observed_values_.gnss_clock.at(i) - ion_delay;
+  }
+  cdt /= visible_gnss_nums_.at(sat_id);
+
+  return cdt;
+}
+
+
 void PBD_dgps::DynamicNoiseScaling(Eigen::MatrixXd Q_dash, Eigen::MatrixXd H)
 {
   Eigen::MatrixXd Phi_all = Eigen::MatrixXd::Identity(num_state_all_, num_state_all_);
@@ -1527,11 +1561,16 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
 
   const RelativePositionSensor* rel_sensor = sat_info_.at(0).components->GetRelativePositionSensor();
 
-  // 精密な相対位置を取得
-  libra::Vector<3> relative_position_rtn = rel_sensor->GetMeasuredTargetPosition_rtn_m();
-  Eigen::Vector3d relative_position_eci = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * ConvLibraVecToEigenVec<3>(relative_position_rtn);
+#ifndef WITHOUT_REL_SENSOR
+  // if (!pcc_fixed)
+  {
+    // 相対位置センサから精密な相対位置を取得
+    libra::Vector<3> relative_position_rtn = rel_sensor->GetMeasuredTargetPosition_rtn_m();
+    Eigen::Vector3d relative_position_eci = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * ConvLibraVecToEigenVec<3>(relative_position_rtn);
 
-  x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
+    x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
+  }
+#endif // WITHOUT_REL_SENSOR
 
   int ref_gnss_ch;
   const int visible_ch_num = common_observed_gnss_sat_id_.size();
@@ -1596,10 +1635,10 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
     const int main_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ch));
     const int main_ref_gnss_original_ch = GetIndexOfStdVector(main_observation.info_.now_observed_gnss_sat_id, gnss_ids.at(ref_gnss_ch));
     // for debug +++++++++++++++++++++++++
-    if (main_observation.GetGnssElevationDeg(main_ch) < 15)
-    {
+    // if (main_observation.GetGnssElevationDeg(main_ch) < 15)
+    // {
       // std::cout << "res_ddcp: " << res_ddcp << std::endl;
-    }
+    // }
     // +++++++++++++++++++++++++++++++++++
 
     pcc_estimate_.GetObservableInfo(ch + ddcp_ch_offset, main_ch, main_ref_gnss_original_ch, main_observation, res_ddcp);
