@@ -249,9 +249,9 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
 
     // PCO, PCVの推定．
 #ifdef PCC
-    // 全部fixしているときに限定する．
-    if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(0) &&
-        std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(1))
+    // 全部fixしているときに限定する．<- よく考えると全部fixしている必要はないな，使用するデータをfixしているものに限定すればいい．
+    // if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(0) &&
+    //     std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(1))
     {
       // 推定完了したら実施しない．
       if (!pcc_estimate_.GetEstimationFinish())
@@ -265,7 +265,7 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
         // pcc_estimate_.SetEstimationFinish(false); // 相対位置センサなしに移す．// FIXME: コマンド的なもので制御できるようにしたい．
       }
     }
-    // この後に観測更新を実施するステップを再度設けるべき，でないと推定前の位置に基づく速度，加速度情報で伝搬することになり，次の観測更新までに誤差が蓄積してしまう．
+
   #endif // PCC
 
 #ifndef TIME_UPDATE_DEBUG
@@ -1584,6 +1584,7 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
   pcc_estimate_.InitializeRefInfo();
   for (int ch = 0; ch < visible_ch_num; ch++)
   {
+    if (!x_est_main.ambiguity.is_fixed.at(ch)) continue; // fix解以外は飛ばす．
     const int gnss_id = common_observed_gnss_sat_id_.at(ch);
     const int main_ch = GetIndexOfStdVector<int>(main_observation.info_.now_observed_gnss_sat_id, gnss_id);
     const int target_ch = GetIndexOfStdVector<int>(gnss_observations_.at(1).info_.now_observed_gnss_sat_id, gnss_id);
