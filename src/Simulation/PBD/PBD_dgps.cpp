@@ -36,13 +36,14 @@
 // #define TIME_UPDATE_DEBUG
 
 #define PCC
-
 #define LAMBDA_DEBUG
+// #define WITHOUT_REL_SENSOR
 
 #undef cross
 
 static const double PBD_DGPS_kConvNm2m = 1e-9;
 static const int precision = 15; // position
+static bool pcc_fixed = false;
 
 // template使っていい感じにしたい．
 // template <typename T> static void LogOutput(const )
@@ -257,6 +258,11 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       {
         const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))), elapsed_time);
         if (updated) KalmanFilter();
+      }
+      else
+      {
+        pcc_fixed = true;
+        // pcc_estimate_.SetEstimationFinish(false); // 相対位置センサなしに移す．// FIXME: コマンド的なもので制御できるようにしたい．
       }
     }
     // この後に観測更新を実施するステップを再度設けるべき，でないと推定前の位置に基づく速度，加速度情報で伝搬することになり，次の観測更新までに誤差が蓄積してしまう．
@@ -1555,11 +1561,16 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
 
   const RelativePositionSensor* rel_sensor = sat_info_.at(0).components->GetRelativePositionSensor();
 
-  // 精密な相対位置を取得
-  libra::Vector<3> relative_position_rtn = rel_sensor->GetMeasuredTargetPosition_rtn_m();
-  Eigen::Vector3d relative_position_eci = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * ConvLibraVecToEigenVec<3>(relative_position_rtn);
+#ifndef WITHOUT_REL_SENSOR
+  // if (!pcc_fixed)
+  {
+    // 相対位置センサから精密な相対位置を取得
+    libra::Vector<3> relative_position_rtn = rel_sensor->GetMeasuredTargetPosition_rtn_m();
+    Eigen::Vector3d relative_position_eci = TransRTN2ECI(x_est_main.position, x_est_main.velocity) * ConvLibraVecToEigenVec<3>(relative_position_rtn);
 
-  x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
+    x_est_target.position = x_est_main.position + relative_position_eci; // 正確な相対位置に更新．<-絶対位置がずれていても以下で差分をとるので良い．
+  }
+#endif // WITHOUT_REL_SENSOR
 
   int ref_gnss_ch;
   const int visible_ch_num = common_observed_gnss_sat_id_.size();

@@ -85,9 +85,10 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
       {
 #ifdef ITERATION
       // fixしたらpcoのフラグを変えて再度推定を行わせる．
-       pco_estimate_.SetPcoFixed(false);
+      pco_estimate_.SetPcoFixed(false);
 #else
       estimation_finish_ = true;
+      pco_estimate_.SetPcoFixed(false); // 初期化しておく
 #endif // ITERATION
       }
       return true;
