@@ -72,24 +72,34 @@ const bool PCOEstimation::DpcoInitialEstimation(const Eigen::MatrixXd& W, const 
     // std::cout << "after estimated ddpcc" << dd_pcc_after << std::endl;
     // std::cout << "raw ddpcc" << V_ << std::endl;
     double pre_acc = 0;
-    for (int i = 0; i < V_.rows(); i++) pre_acc += pow(V_(i), 2.0);
-    pre_acc = sqrt(pre_acc) / V_.rows(); // RMS
+    // RMS
+    // for (int i = 0; i < V_.rows(); i++) pre_acc += pow(V_(i), 2.0);
+    // pre_acc = sqrt(pre_acc) / V_.rows();
+
+    // mean
+    for (int i = 0; i < V_.rows(); i++) pre_acc += V_(i);
+    pre_acc = pre_acc / V_.rows();
     // std::cout << "pre accuracy" << pre_acc << std::endl;
 
     Eigen::VectorXd post_res = V_ - dd_pcc_after;
     double post_acc = 0;
-    for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
-    post_acc = sqrt(post_acc) / post_res.rows();
+    // RMS
+    // for (int i = 0; i < post_res.rows(); i++) post_acc += pow(post_res(i), 2.0);
+    // post_acc = sqrt(post_acc) / post_res.rows();
+
+    // mean
+    for (int i = 0; i < post_res.rows(); i++) post_acc += post_res(i);
+    post_acc = post_acc / post_res.rows();
     // std::cout << "post accuracy" << post_acc << std::endl;
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     // 改善した時だけ更新する．
-    if (pre_acc > post_acc)
+    if (fabs(pre_acc) > fabs(post_acc))
     {
       dpco_mm_ = libra::Vector<3>(0);
       for (int i = 0; i < 3; i++) dpco_mm_[i] = dpco(i) * 1000;
       // 大体0.1mm以下の精度になったら収束判定をする．<- これはなぜこの値にしたのかをもう少し定量的に説明したい．PCOの推定精度は1mm以下を目指していて残差で評価するとこれくらいに相当するから，的な．
-      if (pre_acc < ddcp_res_thresh && post_acc < ddcp_res_thresh)
+      if (fabs(pre_acc) < ddcp_res_thresh) // && post_acc < ddcp_res_thresh
       {
         std::cout << "PCO fixed! at " << elapsed_time << std::endl;
         pco_fixed_ = true;
