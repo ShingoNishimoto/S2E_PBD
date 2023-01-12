@@ -17,6 +17,9 @@ typedef struct _gnssrecever_param {
   std::string antex_file_path;
   double pcv_d_azimuth;
   double pcv_d_elevation;
+  double pseudo_stddev;
+  double carrier_stddev;
+  double clock_rn_stddev; // for random noise
 } GNSSReceiverParam;
 
 bool ReadAntexTable(std::string file_name, const double d_azi, const double d_ele, libra::Vector<3>& pco, std::vector<double>& pcv);
@@ -49,6 +52,9 @@ GNSSReceiverParam ReadGNSSReceiverIni(const std::string fname, const GnssSatelli
   gnssreceiver_param.antex_file_path = "../../../ExtLibraries/ANTEX/" + gnssr_conf.ReadString(GSection, "antex_file_name");
   gnssreceiver_param.pcv_d_azimuth = gnssr_conf.ReadDouble(GSection, "d_azi");
   gnssreceiver_param.pcv_d_elevation = gnssr_conf.ReadDouble(GSection, "d_ele");
+  gnssreceiver_param.pseudo_stddev = gnssr_conf.ReadDouble(GSection, "pseudo_range_stddev");
+  gnssreceiver_param.carrier_stddev = gnssr_conf.ReadDouble(GSection, "carrier_phase_stddev") / 1000.0; // mm -> m
+  gnssreceiver_param.clock_rn_stddev = gnssr_conf.ReadDouble(GSection, "clock_rn_stddev");
 
   return gnssreceiver_param;
 }
@@ -68,7 +74,11 @@ PBD_GNSSReceiver InitGNSSReceiver(ClockGenerator* clock_gen, int id, const std::
   }
 
   PBD_GNSSReceiver gnss_r(gr_param.prescaler, clock_gen, id, gr_param.gnss_id, gr_param.ch_max, gr_param.antenna_model, gr_param.antenna_pos_b,
-                      gr_param.q_b2c, gr_param.half_width, gr_param.noise_std, gr_param.alignment_err_std, pco_, pcv_, gr_param.pcv_d_azimuth, gr_param.pcv_d_elevation, dynamics, gnss_satellites, simtime);
+                      gr_param.q_b2c, gr_param.half_width, gr_param.noise_std,
+                      gr_param.alignment_err_std, pco_, pcv_,
+                      gr_param.pcv_d_azimuth, gr_param.pcv_d_elevation,
+                      gr_param.pseudo_stddev, gr_param.carrier_stddev, gr_param.clock_rn_stddev,
+                      dynamics, gnss_satellites, simtime);
   return gnss_r;
 }
 

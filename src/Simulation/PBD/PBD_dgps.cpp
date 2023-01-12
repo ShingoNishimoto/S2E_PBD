@@ -3,6 +3,7 @@
 #include "PBD_dgps.h"
 #include <GeoPotential.h>
 #include "../../Library/VectorTool.hpp"
+#include <Interface/InitInput/IniAccess.h>
 
 // clock model
 #define CLOCK_IS_WHITE_NOISE (1)
@@ -49,7 +50,13 @@ static bool pcc_fixed = false;
 // template <typename T> static void LogOutput(const )
 static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int size, const int max_size);
 
-PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop) :mt(42), step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()), geo_potential_(geop), num_main_state_all_(NUM_SINGLE_STATE), num_state_all_(NUM_STATE)
+PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_,
+  const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop, const std::string ini_path) :mt(42),
+  step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()),
+  geo_potential_(geop), num_main_state_all_(NUM_SINGLE_STATE), num_state_all_(NUM_STATE),
+  process_noise_(ReadFilterNoiseParams(ini_path, "ProcessNoise")), apriori_noise_(ReadFilterNoiseParams(ini_path, "A-priori")),
+  tau_a_(IniAccess(ini_path).ReadDouble("ProcessNoise", "tau_a")), tau_cdt_(IniAccess(ini_path).ReadDouble("ProcessNoise", "tau_a")),
+  alpha_(IniAccess(ini_path).ReadDouble("AKF", "alpha"))
 {
   //初期化
   x_est_main.position = Eigen::VectorXd::Zero(3);
@@ -102,36 +109,35 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   // STMの初期化
   InitializePhi();
 
+  // iniから取得
+
+
   // 初期分散
-  std::normal_distribution<> position_dist(0.0,sigma_r_ini);
-  std::normal_distribution<> velocity_dist(0.0, sigma_v_ini);
-  std::normal_distribution<> acc_r_dist(0.0, sigma_acc_r_ini);
-  std::normal_distribution<> acc_t_dist(0.0, sigma_acc_t_ini);
-  std::normal_distribution<> acc_n_dist(0.0, sigma_acc_n_ini);
-  std::normal_distribution<> N_dist(0.0, sigma_N_ini);
+  std::normal_distribution<> position_dist(0.0,apriori_noise_.sigma_r);
+  std::normal_distribution<> velocity_dist(0.0, apriori_noise_.sigma_v);
 
   Eigen::VectorXd V = Eigen::VectorXd::Zero(NUM_STATE);
 
   // 状態量を減らした部分を実装.
   // A-priori
-  for(int i = 0; i < 3; ++i) V(i) = pow(sigma_r_ini, 2.0); // position
-  V(3) = pow(sigma_cdt_ini, 2.0); // clock
-  for(int i = 0; i < 3; ++i) V(4 + i) = pow(sigma_v_ini, 2.0); // velocity
+  for(int i = 0; i < 3; ++i) V(i) = pow(apriori_noise_.sigma_r, 2.0); // position
+  V(3) = pow(apriori_noise_.sigma_cdt, 2.0); // clock
+  for(int i = 0; i < 3; ++i) V(4 + i) = pow(apriori_noise_.sigma_v, 2.0); // velocity
   // acceleration
 #ifdef REDUCED_DYNAMIC
-  V(7) = pow(sigma_acc_r_ini, 2.0);
-  V(8) = pow(sigma_acc_t_ini, 2.0);
-  V(9) = pow(sigma_acc_n_ini, 2.0);
+  V(7) = pow(apriori_noise_.sigma_aR, 2.0);
+  V(8) = pow(apriori_noise_.sigma_aT, 2.0);
+  V(9) = pow(apriori_noise_.sigma_aN, 2.0);
 #endif // REDUCED_DYNAMIC
 
   // 以下がtarget
-  for (int i = 0; i < 3; ++i) V(NUM_SINGLE_STATE + i) = pow(sigma_r_ini, 2.0);
-  V(NUM_SINGLE_STATE + 3) = pow(sigma_cdt_ini, 2.0);
-  for (int i = 0; i < 3; ++i) V(NUM_SINGLE_STATE + 4 + i) = pow(sigma_v_ini, 2.0);
+  for (int i = 0; i < 3; ++i) V(NUM_SINGLE_STATE + i) = pow(apriori_noise_.sigma_r, 2.0);
+  V(NUM_SINGLE_STATE + 3) = pow(apriori_noise_.sigma_cdt, 2.0);
+  for (int i = 0; i < 3; ++i) V(NUM_SINGLE_STATE + 4 + i) = pow(apriori_noise_.sigma_v, 2.0);
 #ifdef REDUCED_DYNAMIC
-  V(NUM_SINGLE_STATE + 7) = pow(sigma_acc_r_ini, 2.0);
-  V(NUM_SINGLE_STATE + 8) = pow(sigma_acc_t_ini, 2.0);
-  V(NUM_SINGLE_STATE + 9) = pow(sigma_acc_n_ini, 2.0);
+  V(NUM_SINGLE_STATE + 7) = pow(apriori_noise_.sigma_aR, 2.0);
+  V(NUM_SINGLE_STATE + 8) = pow(apriori_noise_.sigma_aT, 2.0);
+  V(NUM_SINGLE_STATE + 9) = pow(apriori_noise_.sigma_aN, 2.0);
 #endif // REDUCED_DYNAMIC
 
   P_ = V.asDiagonal(); // 誤差分散共分散行列P 初めはN無し
@@ -142,6 +148,9 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 
   // Measurement noise R_
   Eigen::VectorXd Rv = Eigen::VectorXd::Zero(NUM_OBSERVABLES);
+  const double pseudo_sigma = gnss_observations_.at(0).GetReceiver()->pseudo_sigma_;
+  const double carrier_sigma = gnss_observations_.at(0).GetReceiver()->carrier_sigma_;
+  const double clock_sigma = gnss_observations_.at(0).GetReceiver()->clock_sigma_;
   Rv.topRows(2*NUM_GNSS_CH) = (pow(pseudo_sigma / 2.0, 2.0) + pow(carrier_sigma / 2.0, 2.0))* Eigen::VectorXd::Ones(2*NUM_GNSS_CH); // GRAPHIC
   Rv.bottomRows(NUM_GNSS_CH) = 2.0*pow(carrier_sigma, 2.0) * Eigen::VectorXd::Ones(NUM_GNSS_CH); // SDCP
   R_ = Rv.asDiagonal();
@@ -156,23 +165,23 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   common_observed_status.assign(num_of_gnss_satellites_, false);
 
   std::ofstream ofs_ini_txt("readme_new.txt");
-  ofs_ini_txt << "initial position dist: " << sigma_r_ini << std::endl;
-  ofs_ini_txt << "initial velocity dist: " << sigma_v_ini << std::endl;
-  ofs_ini_txt << "initial acceleration dist: " << sigma_acc_r_ini << std::endl;
-  ofs_ini_txt << "initial clock dist: " << sigma_cdt_ini << std::endl;
-  ofs_ini_txt << "initial ambiguity dist[cycle]: " << sigma_N_ini << std::endl;
+  ofs_ini_txt << "initial position dist: " << apriori_noise_.sigma_r << std::endl;
+  ofs_ini_txt << "initial velocity dist: " << apriori_noise_.sigma_v << std::endl;
+  ofs_ini_txt << "initial acceleration dist: " << apriori_noise_.sigma_aR << std::endl;
+  ofs_ini_txt << "initial clock dist: " << apriori_noise_.sigma_cdt << std::endl;
+  ofs_ini_txt << "initial ambiguity dist[cycle]: " << apriori_noise_.sigma_N << std::endl;
   ofs_ini_txt << "pseudo dist: " << pseudo_sigma << std::endl;
   ofs_ini_txt << "carrier dist: " << carrier_sigma << std::endl;
   ofs_ini_txt << "clock dist: " << clock_sigma << std::endl;
-  ofs_ini_txt << "process noise of position: " << sigma_r_process << std::endl;
-  ofs_ini_txt << "process noise of velocity: " << sigma_v_process << std::endl;
-  ofs_ini_txt << "process noise of radial acceleration: " << sigma_acc_r_process << std::endl;
-  ofs_ini_txt << "process noise of tangential acceleration: " << sigma_acc_t_process << std::endl;
-  ofs_ini_txt << "process noise of north acceleration: " << sigma_acc_n_process << std::endl;
-  ofs_ini_txt << "process noise of clock: " << sigma_cdt_process << std::endl;
-  ofs_ini_txt << "process noise of ambiguity[cycle]: " << sigma_N_process << std::endl;
-  ofs_ini_txt << "time const. acceleration: " << tau_a << std::endl;
-  ofs_ini_txt << "time const. clock: " << tau_cdt << std::endl;
+  ofs_ini_txt << "process noise of position: " << process_noise_.sigma_r << std::endl;
+  ofs_ini_txt << "process noise of velocity: " << process_noise_.sigma_v << std::endl;
+  ofs_ini_txt << "process noise of radial acceleration: " << process_noise_.sigma_aR << std::endl;
+  ofs_ini_txt << "process noise of tangential acceleration: " << process_noise_.sigma_aT << std::endl;
+  ofs_ini_txt << "process noise of north acceleration: " << process_noise_.sigma_aN << std::endl;
+  ofs_ini_txt << "process noise of clock: " << process_noise_.sigma_cdt << std::endl;
+  ofs_ini_txt << "process noise of ambiguity[cycle]: " << process_noise_.sigma_N << std::endl;
+  ofs_ini_txt << "time const. acceleration: " << tau_a_ << std::endl;
+  ofs_ini_txt << "time const. clock: " << tau_cdt_ << std::endl;
   ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << std::endl; // FIXME
   ofs_ini_txt << "num of status: " << NUM_STATE << std::endl;
   ofs_ini_txt << "observe step time: " << observe_step_time << std::endl;
@@ -192,6 +201,21 @@ void PBD_dgps::InitAmbiguity(EstimatedVariables& x_est)
   x_est.ambiguity.N.assign(NUM_GNSS_CH, 0);
   x_est.ambiguity.gnss_sat_id.assign(NUM_GNSS_CH, num_of_gnss_satellites_);
   x_est.ambiguity.is_fixed.assign(NUM_GNSS_CH, false);
+}
+
+PBD_dgps::KalmanFilterNoise PBD_dgps::ReadFilterNoiseParams(const std::string ini_path, const char* section)
+{
+  IniAccess filter_conf(ini_path);
+  KalmanFilterNoise filter_noise;
+  filter_noise.sigma_r = filter_conf.ReadDouble(section, "sigma_r");
+  filter_noise.sigma_v = filter_conf.ReadDouble(section, "sigma_v");
+  filter_noise.sigma_aR = filter_conf.ReadDouble(section, "sigma_aR");
+  filter_noise.sigma_aT = filter_conf.ReadDouble(section, "sigma_aT");
+  filter_noise.sigma_aN = filter_conf.ReadDouble(section, "sigma_aN");
+  filter_noise.sigma_cdt = filter_conf.ReadDouble(section, "sigma_cdt");
+  filter_noise.sigma_N = filter_conf.ReadDouble(section, "sigma_N");
+
+  return filter_noise;
 }
 
 // ここが他と同じ時刻系を使ってないのが原因な気がしてきた．FIXME！
@@ -516,8 +540,8 @@ void PBD_dgps::OrbitPropagation()
 
   // cdt
 #ifdef CLOCK_IS_RANDOM_WALK
-  std::normal_distribution<> cdt_process_noise(0.0, sigma_cdt_process*sqrt(step_time/tau_cdt));
-  std::normal_distribution<> cdt_process_noise(0.0, sigma_cdt_process);
+  std::normal_distribution<> cdt_process_noise(0.0, process_noise_.sigma_cdt*sqrt(step_time/tau_cdt));
+  std::normal_distribution<> cdt_process_noise(0.0, process_noise_.sigma_cdt);
   x_est_main.clock(0) = cdt_process_noise(mt);
   x_est_target.clock(0) = cdt_process_noise(mt);
 #endif // CLOCK_IS_RANDOM_WALK
@@ -535,7 +559,7 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   Eigen::Vector3d acc_dist_cpy = acc_dist;
   Eigen::Vector3d k0 = PositionDifferential(velocity);
   Eigen::Vector3d l0 = VelocityDifferential(position, velocity, acceleration, acc_dist);
-  Eigen::Vector3d m0 = -acceleration / tau_a;
+  Eigen::Vector3d m0 = -acceleration / tau_a_;
   Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n0 = CalculateJacobian(position, velocity)*Phi;
   // (a, p)
 #ifdef REDUCED_DYNAMIC
@@ -550,7 +574,7 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   acc_dist = acc_dist_cpy;
   Eigen::Vector3d k1 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l1 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
-  Eigen::Vector3d m1 = -tmp_acceleration / tau_a;
+  Eigen::Vector3d m1 = -tmp_acceleration / tau_a_;
   Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n1 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
 #ifdef REDUCED_DYNAMIC
   n1.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
@@ -563,7 +587,7 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   acc_dist = acc_dist_cpy;
   Eigen::Vector3d k2 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l2 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
-  Eigen::Vector3d m2 = -tmp_acceleration / tau_a;
+  Eigen::Vector3d m2 = -tmp_acceleration / tau_a_;
   Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n2 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
 #ifdef REDUCED_DYNAMIC
   n2.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
@@ -576,7 +600,7 @@ void PBD_dgps::RK4(Eigen::Vector3d& position, Eigen::Vector3d& velocity, Eigen::
   acc_dist = acc_dist_cpy;
   Eigen::Vector3d k3 = PositionDifferential(tmp_velocity);
   Eigen::Vector3d l3 = VelocityDifferential(tmp_position, tmp_velocity, acceleration, acc_dist);
-  Eigen::Vector3d m3 = -tmp_acceleration / tau_a;
+  Eigen::Vector3d m3 = -tmp_acceleration / tau_a_;
   Eigen::Matrix<double, 7, NUM_SINGLE_STATE> n3 = CalculateJacobian(tmp_position, tmp_velocity)*tmp_Phi;
 #ifdef REDUCED_DYNAMIC
   n3.block(4, 7, 3, 3) += PBD_DGPS_kConvNm2m*rtn2eci;
@@ -768,10 +792,10 @@ void PBD_dgps::InitializeQ(void)
   Q_ = B * Q_at * B.transpose();
 
   // add process noise for r and v
-  Q_.block(0, 0, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
-  Q_.block(4, 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
-  Q_.block(num_main_state_all_, num_main_state_all_, 3, 3) = pow(sigma_r_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
-  Q_.block(num_main_state_all_ + 4, num_main_state_all_ + 4, 3, 3) = pow(sigma_v_process, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
+  Q_.block(0, 0, 3, 3) = pow(process_noise_.sigma_r, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
+  Q_.block(4, 4, 3, 3) = pow(process_noise_.sigma_v, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
+  Q_.block(num_main_state_all_, num_main_state_all_, 3, 3) = pow(process_noise_.sigma_r, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
+  Q_.block(num_main_state_all_ + 4, num_main_state_all_ + 4, 3, 3) = pow(process_noise_.sigma_v, 2.0) * Eigen::Matrix3d::Identity(); // * pow(step_time, 2.0);
 #ifdef TIME_UPDATE_DEBUG
   Q_.block(0, 0, 3, 3) *= step_time / observe_step_time;
   Q_.block(4, 4, 3, 3) *= step_time / observe_step_time;
@@ -781,8 +805,8 @@ void PBD_dgps::InitializeQ(void)
 
 #ifndef N_DEBUG
   // N process
-  Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)); // * pow(step_time, 2.0);
-  Q_.block(NUM_SINGLE_STATE + num_main_state_all_, NUM_SINGLE_STATE + num_main_state_all_, visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)) = pow(sigma_N_process, 2.0) * Eigen::MatrixXd::Identity(visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)); // * pow(step_time, 2.0);
+  Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)) = pow(process_noise_.sigma_N, 2.0) * Eigen::MatrixXd::Identity(visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)); // * pow(step_time, 2.0);
+  Q_.block(NUM_SINGLE_STATE + num_main_state_all_, NUM_SINGLE_STATE + num_main_state_all_, visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)) = pow(process_noise_.sigma_N, 2.0) * Eigen::MatrixXd::Identity(visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)); // * pow(step_time, 2.0);
 #ifdef TIME_UPDATE_DEBUG
   Q_.block(NUM_SINGLE_STATE, NUM_SINGLE_STATE, visible_gnss_nums_.at(0), visible_gnss_nums_.at(0)) *= step_time / observe_step_time;
   Q_.block(NUM_SINGLE_STATE + num_main_state_all_, NUM_SINGLE_STATE + num_main_state_all_, visible_gnss_nums_.at(1), visible_gnss_nums_.at(1)) *= step_time / observe_step_time;
@@ -799,18 +823,18 @@ Eigen::MatrixXd PBD_dgps::CalculateQ_at(void)
   double q_acc_n = 0.0f;
 
 #ifdef REDUCED_DYNAMIC
-  double phi = exp(-observe_step_time / tau_a); // ここはobserved_timeとどっちなのか？
-  q_acc_r = pow(sigma_acc_r_process, 2.0) * (1 - pow(phi, 2.0));
-  q_acc_t = pow(sigma_acc_t_process, 2.0) * (1 - pow(phi, 2.0));
-  q_acc_n = pow(sigma_acc_n_process, 2.0) * (1 - pow(phi, 2.0));
+  double phi = exp(-observe_step_time / tau_a_); // ここはobserved_timeとどっちなのか？
+  q_acc_r = pow(process_noise_.sigma_aR, 2.0) * (1 - pow(phi, 2.0));
+  q_acc_t = pow(process_noise_.sigma_aT, 2.0) * (1 - pow(phi, 2.0));
+  q_acc_n = pow(process_noise_.sigma_aN, 2.0) * (1 - pow(phi, 2.0));
 #endif // REDUCED_DYNAMIC
 
   double q_cdt;
 #ifdef CLOCK_IS_WHITE_NOISE
-  q_cdt = pow(sigma_cdt_process, 2.0); //  * step_time
+  q_cdt = pow(process_noise_.sigma_cdt, 2.0); //  * step_time
 #endif // CLOCK_IS_WHITE_NOISE
 #ifdef CLOCK_IS_RANDOM_WALK
-  q_cdt = pow(sigma_cdt_process, 2.0) * (observe_step_time / tau_cdt);
+  q_cdt = pow(process_noise_.sigma_cdt, 2.0) * (observe_step_time / tau_cdt);
 #endif // CLOCK_IS_RANDOM_WALK
 
   Q_at(0, 0) = q_cdt;
@@ -824,7 +848,7 @@ Eigen::MatrixXd PBD_dgps::CalculateQ_at(void)
 
 Eigen::MatrixXd PBD_dgps::CalculatePhi_a(const double dt)
 {
-  double phi = exp(-dt / tau_a); // constなので計算毎回する意味ない．
+  double phi = exp(-dt / tau_a_); // constなので計算毎回する意味ない．
   Eigen::MatrixXd Phi_a = Eigen::MatrixXd::Identity(3, 3);
 #ifdef REDUCED_DYNAMIC
   Phi_a *= phi;
@@ -904,9 +928,9 @@ void PBD_dgps::KalmanFilter()
   R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
 
   Eigen::VectorXd E_post = z_ - hx_; // ここじゃない？
-  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose() - H*P_*H.transpose()); // residual based R_-adaptation <- これでするとめっちゃずれる．
-  // R_ = alpha * R_ + (1 - alpha) * (E_post*E_post.transpose()); // residual based R_-adaptation
-  Eigen::MatrixXd Q_dash = alpha * Q_ + (1 - alpha) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
+  // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose() - H*P_*H.transpose()); // residual based R_-adaptation <- これでするとめっちゃずれる．
+  // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose()); // residual based R_-adaptation
+  Eigen::MatrixXd Q_dash = alpha_ * Q_ + (1 - alpha_) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
 
   DynamicNoiseScaling(Q_dash, H_);
   // これしてるから，絶対軌道精度の影響（つまり残差の大きさ）ではなくて，収束してしまう？
@@ -1251,7 +1275,6 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
     else if (std::find(pre_gnss_sat_ids.begin(), pre_gnss_sat_ids.end(), gnss_sat_id) == pre_gnss_sat_ids.end() && observe_info_.now_observed_status.at(gnss_sat_id) == true)
     {
       if (now_index != GetIndexOfStdVector<int>(now_gnss_sat_ids, gnss_sat_id)) abort();
-      // std::normal_distribution<> N_dist(0.0, sigma_N_ini);
 
       Eigen::Vector3d x_est_rec = ConvCenterOfMassToReceivePos(x_est.position, antenna_pos_b_.at(sat_id), sat_info_.at(sat_id).dynamics);
       double ionosphere_delay = gnss_observation.CalculateIonDelay(gnss_sat_id, ConvEigenVecToLibraVec<3>(x_est_rec), L1_frequency); // 電離圏遅延量を既知とする．
@@ -1270,8 +1293,8 @@ void PBD_dgps::UpdateBiasForm(const int sat_id, EstimatedVariables& x_est, Eigen
       int offset = NUM_SINGLE_STATE + now_index;
 
       // 対角成分だけ初期化．
-      P(offset, offset) = pow(sigma_N_ini, 2.0);
-      Q(offset, offset) = pow(sigma_N_process, 2.0);
+      P(offset, offset) = pow(apriori_noise_.sigma_N, 2.0);
+      Q(offset, offset) = pow(process_noise_.sigma_N, 2.0);
       ++now_index;
     }
     // 引き継ぐ
@@ -1337,6 +1360,8 @@ void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids,
   else
   {
     // GRAPHIC offsetがmainの観測衛星数以下であればGRAPHIC
+    const double pseudo_sigma = gnss_observations_.at(0).GetReceiver()->pseudo_sigma_;
+    const double carrier_sigma = gnss_observations_.at(0).GetReceiver()->carrier_sigma_;
     if (base_offset <= visible_gnss_nums_.at(0)) R_(offset, offset) = pow(pseudo_sigma, 2.0) + pow(carrier_sigma, 2.0);
     // SDCP
     else R_(offset, offset) = 2.0 * pow(carrier_sigma, 2.0);
@@ -1513,13 +1538,13 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
         // 対角成分だけ初期化．
         for (int i = 0; i < visible_gnss_nums_.at(0); i++)
         {
-          P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(sigma_N_ini, 2.0);
-          Q_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(sigma_N_process, 2.0);
+          P_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(apriori_noise_.sigma_N, 2.0);
+          Q_(NUM_SINGLE_STATE + i, NUM_SINGLE_STATE + i) = pow(process_noise_.sigma_N, 2.0);
         }
         for (int i = 0; i < visible_gnss_nums_.at(1); i++)
         {
-          P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(sigma_N_ini, 2.0);
-          Q_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(sigma_N_process, 2.0);
+          P_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(apriori_noise_.sigma_N, 2.0);
+          Q_(num_main_state_all_ + NUM_SINGLE_STATE + i, num_main_state_all_ + NUM_SINGLE_STATE + i) = pow(process_noise_.sigma_N, 2.0);
         }
         lambda_result = false;
       }

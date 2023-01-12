@@ -7,18 +7,20 @@
 #define FIXED_ALIGNMENT
 
 PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
-               const AntennaModel antenna_model, const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
-               const Vector<3> noise_std, const Vector<3> alignment_err_std,
-               libra::Vector<3> pco, std::vector<double> pcv,
-               const double azi_increment, const double ele_increment,
-               const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
-               GNSSReceiver(prescaler, clock_gen, id, gnss_id, ch_max, antenna_model, ant_pos_b, q_b2c, half_width,
-                            noise_std, dynamics, gnss_satellites, simtime),
-               nrs_antenna_b_x_(0.0, alignment_err_std[0], g_rand.MakeSeed()),
-               nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
-               nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
-               pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
-              //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
+    const AntennaModel antenna_model, const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
+    const Vector<3> noise_std, const Vector<3> alignment_err_std,
+    libra::Vector<3> pco, std::vector<double> pcv,
+    const double azi_increment, const double ele_increment,
+    const double pseudo_sigma, const double carrier_sigma, const double clock_sigma,
+    const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
+    GNSSReceiver(prescaler, clock_gen, id, gnss_id, ch_max, antenna_model, ant_pos_b, q_b2c, half_width,
+                noise_std, dynamics, gnss_satellites, simtime),
+    nrs_antenna_b_x_(0.0, alignment_err_std[0], g_rand.MakeSeed()),
+    nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
+    nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
+    pseudo_sigma_(pseudo_sigma), carrier_sigma_(carrier_sigma), clock_sigma_(clock_sigma),
+    pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
+  //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
 {
 #ifdef FIXED_ALIGNMENT
 // stdではなくて，固定誤差として与えてあげる．
@@ -46,7 +48,7 @@ void PBD_GNSSReceiver::MainRoutine(int count)
   Vector<3> pos_true_eci_ = dynamics_->GetOrbit().GetSatPosition_i();
   Quaternion q_i2b = dynamics_->GetQuaternion_i2b();
 
-  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma);
+  std::normal_distribution<> receiver_clock_dist(0.0, clock_sigma_);
   clock_bias_ = receiver_clock_dist(mt_);
 
   CheckAntenna(pos_true_eci_, q_i2b);
@@ -276,8 +278,8 @@ PBD_GNSSReceiver::GnssReceiverObservations PBD_GNSSReceiver::GetRawObservations(
   l2_carrier_phase.first += pcc / L2_lambda; // L2はPCCが違うが使用してないので．
 
   // add measurement error
-  std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma);
-  std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma);
+  std::normal_distribution<> pseudo_range_noise(0.0, pseudo_sigma_);
+  std::normal_distribution<> carrier_phase_noise(0.0, carrier_sigma_);
   l1_pseudo_range += pseudo_range_noise(mt_);
   l2_pseudo_range += pseudo_range_noise(mt_);
   l1_carrier_phase.first += carrier_phase_noise(mt_) / L1_lambda;
