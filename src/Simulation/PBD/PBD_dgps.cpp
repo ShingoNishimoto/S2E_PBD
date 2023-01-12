@@ -142,6 +142,9 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
 
   // Measurement noise R_
   Eigen::VectorXd Rv = Eigen::VectorXd::Zero(NUM_OBSERVABLES);
+  const double pseudo_sigma = gnss_observations_.at(0).GetReceiver()->pseudo_sigma_;
+  const double carrier_sigma = gnss_observations_.at(0).GetReceiver()->carrier_sigma_;
+  const double clock_sigma = gnss_observations_.at(0).GetReceiver()->clock_sigma_;
   Rv.topRows(2*NUM_GNSS_CH) = (pow(pseudo_sigma / 2.0, 2.0) + pow(carrier_sigma / 2.0, 2.0))* Eigen::VectorXd::Ones(2*NUM_GNSS_CH); // GRAPHIC
   Rv.bottomRows(NUM_GNSS_CH) = 2.0*pow(carrier_sigma, 2.0) * Eigen::VectorXd::Ones(NUM_GNSS_CH); // SDCP
   R_ = Rv.asDiagonal();
@@ -1337,6 +1340,8 @@ void PBD_dgps::AdjustReceiveCovariance(const std::vector<int>& now_gnss_sat_ids,
   else
   {
     // GRAPHIC offsetがmainの観測衛星数以下であればGRAPHIC
+    const double pseudo_sigma = gnss_observations_.at(0).GetReceiver()->pseudo_sigma_;
+    const double carrier_sigma = gnss_observations_.at(0).GetReceiver()->carrier_sigma_;
     if (base_offset <= visible_gnss_nums_.at(0)) R_(offset, offset) = pow(pseudo_sigma, 2.0) + pow(carrier_sigma, 2.0);
     // SDCP
     else R_(offset, offset) = 2.0 * pow(carrier_sigma, 2.0);
