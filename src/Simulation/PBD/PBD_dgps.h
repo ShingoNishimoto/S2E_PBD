@@ -26,7 +26,8 @@
 class PBD_dgps
 {
 public:
-  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop); // OrbitとGnssObservation同時に取得したい．
+  PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_,
+    const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop, const std::string ini_path); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
   void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
 
@@ -104,6 +105,18 @@ private:
   // air drag ballistic coefficient
   const double Cd = 2.928e-14 / 5; // 高度に応じて変更したいが，高度変化ないから一旦，一定で行く．これも推定した方がいい気はする．
 
+  // Kalman Filter noise
+  struct KalmanFilterNoise
+  {
+    double sigma_r; // [m]
+    double sigma_v; // [m/s]
+    double sigma_aR; // [nm/s2]
+    double sigma_aT; // [nm/s2]
+    double sigma_aN; // [nm/s2]
+    double sigma_cdt; // [m]
+    double sigma_N; // [cycle]
+  };
+
   // for Kalman Filter
   Eigen::MatrixXd P_;
   Eigen::MatrixXd Phi_;
@@ -114,6 +127,11 @@ private:
   Eigen::VectorXd hx_;
   Eigen::MatrixXd H_;
   Eigen::VectorXd pre_Rv_;
+  const KalmanFilterNoise apriori_noise_;
+  const KalmanFilterNoise process_noise_;
+  const double tau_a_;
+  const double tau_cdt_;
+  const double alpha_;
 
   double step_time;
   double observe_step_time = 10.0;
@@ -137,6 +155,7 @@ private:
   void InitializeQ();
   void InitLogTable(void);
   void PBD_dgps::InitializePhi(void);
+  KalmanFilterNoise ReadFilterNoiseParams(const std::string ini_path, const char* section);
 
   // Filter関連
   // sat_idだけ指定する形でもいいかも

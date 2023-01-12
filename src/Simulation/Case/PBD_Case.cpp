@@ -2,7 +2,7 @@
 #include <Interface/InitInput/IniAccess.h>
 #include "../PBD/PBD_GeoPotential.hpp"
 
-PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base)//, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
+PBD_Case::PBD_Case(std::string ini_base) :SimulationCase(ini_base) //, MCSimExecutor& mc_sim, const string log_path):SimulationCase(ini_fname, mc_sim, log_path),mc_sim_(mc_sim)
 {
   rel_info_ = RelativeInformation();
   pbd_inter_sat_comm_ = new PBD_InterSatComm(&sim_config_);
@@ -42,7 +42,7 @@ void PBD_Case::Initialize()
 
   PBD_GeoPotential* geop = new PBD_GeoPotential(20, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
 
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_, geop);
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_, geop, "../../data/ini/FilterSettings.ini");
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
