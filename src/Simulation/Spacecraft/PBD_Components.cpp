@@ -11,7 +11,12 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
 
   // GNSS receiver
   std::string ini_path = iniAccess.ReadString("COMPONENTS_FILE", "gnss_receiver");
+  config_->main_logger_->CopyFileToLogDir(ini_path);
   gnss_receiver_ = new PBD_GNSSReceiver(InitGNSSReceiver(clock_gen, sat_id, ini_path, dynamics, &(glo_env->GetGnssSatellites()), &(glo_env->GetSimTime())));
+  PhaseCenterCorrection* pcc_ptr = gnss_receiver_->GetPCCPtr();
+  pcc_ptr->LogSetup(*(config_->main_logger_));
+  pcc_ptr->PcvLogOutput("pcv_" + std::to_string(sat_id) + ".csv");
+  pcc_ptr->PccLogOutput("pcc_" + std::to_string(sat_id) + ".csv");
 
   if (sat_id == 0)
   {
@@ -25,6 +30,7 @@ PBD_Components::PBD_Components(const Dynamics* dynamics, const Structure* struct
 
     // Relative Position Sensor
     const std::string rel_pos_file = iniAccess.ReadString("COMPONENTS_FILE", "relative_position_sensor_file");
+    config_->main_logger_->CopyFileToLogDir(rel_pos_file);
     relative_position_sensor_ = new RelativePositionSensor(InitializeRelativePositionSensor(clock_gen, rel_pos_file, compo_step_sec, *rel_info_, *dynamics_));
   }
 }

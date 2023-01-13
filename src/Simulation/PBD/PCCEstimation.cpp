@@ -79,8 +79,8 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
     {
       pcc_->UpdatePCV(pcv_estimate_.dpcv_vec_mm_);
        // ステップごとに保存できるようにしたい．
-      pcc_->PcvLogOutput(pcc_->out_fname_base_ + "_pcv.csv");
-      pcc_->PccLogOutput(pcc_->out_fname_base_ + "_pcc.csv");
+      pcc_->PcvLogOutput("_pcv.csv");
+      pcc_->PccLogOutput("_pcc.csv");
       if (pcv_estimate_.GetPcvFixed())
       {
 #ifdef ITERATION

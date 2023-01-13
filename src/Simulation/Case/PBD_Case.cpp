@@ -42,7 +42,10 @@ void PBD_Case::Initialize()
 
   PBD_GeoPotential* geop = new PBD_GeoPotential(20, "../../../ExtLibraries/GeoPotential/egm96_to360.ascii");
 
-  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_, geop, "../../data/ini/FilterSettings.ini");
+  std::string filter_ini = "../../data/ini/FilterSettings.ini";
+  sim_config_.main_logger_->CopyFileToLogDir(filter_ini);
+  pbd_ = new PBD_dgps(glo_env_->GetSimTime(), glo_env_->GetGnssSatellites(), spacecrafts_, geop, filter_ini);
+  pbd_->LogSetup(*(sim_config_.main_logger_));
 
   //Write headers to the log
   sim_config_.main_logger_->WriteHeaders();
