@@ -9,11 +9,9 @@
 
 // PCOは左手系(north, east, up)で定義されている．左手系なのでazimuthは時計まわり．これに合うように要修正！
 PhaseCenterCorrection::PhaseCenterCorrection(libra::Vector<3> pco, std::vector<double> pcv, const double azi_increment, const double ele_increment): pco_mm_(pco), pcv_mm_(pcv),
-azi_increment_(azi_increment), ele_increment_(ele_increment)
+azi_increment_(azi_increment), ele_increment_(ele_increment), out_fname_base_("")
 {
   InitAngleIndexes();
-  PcvLogOutput("phase_center_variation.csv");
-  PccLogOutput("phase_center_correction.csv");
 }
 
 // pcoだけを指定する場合．推定用．
@@ -37,9 +35,14 @@ void PhaseCenterCorrection::UpdatePCV(const std::vector<double> dpcv_mm)
   }
 }
 
+void PhaseCenterCorrection::LogSetup(Logger& logger)
+{
+  out_fname_base_ = logger.GetLogPath() + out_fname_base_;
+}
+
 void PhaseCenterCorrection::PcvLogOutput(std::string out_fname)
 {
-  std::ofstream ofs_(out_fname);
+  std::ofstream ofs_(out_fname_base_ + out_fname);
   const int precision = 5;
 
   for (int i = 0; i < 3; i++)
@@ -65,7 +68,7 @@ void PhaseCenterCorrection::PcvLogOutput(std::string out_fname)
 
 void PhaseCenterCorrection::PccLogOutput(std::string out_fname)
 {
-  std::ofstream ofs_(out_fname);
+  std::ofstream ofs_(out_fname_base_ + out_fname);
   const int precision = 5;
 
   for (int i = 0; i < 3; i++)

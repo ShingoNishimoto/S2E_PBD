@@ -30,6 +30,7 @@ public:
     const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop, const std::string ini_path); // OrbitとGnssObservation同時に取得したい．
   ~PBD_dgps();
   void Update(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_, PBD_GnssObservation& main_observation, PBD_GnssObservation& target_observation, const CelestialRotation earth_rotation);//, const Orbit& main_orbit, const Orbit& target_orbit);
+  void LogSetup(Logger& logger);
 
   void OrbitPropagation();
   void KalmanFilter();
@@ -140,7 +141,7 @@ private:
   libra::Matrix<3, 3> trans_eci_to_ecef_;
 
   // log用
-  std::ofstream ofs;
+  std::ofstream ofs_;
 
   int num_of_gnss_satellites_;
   int num_observables_ = 0;
@@ -198,6 +199,5 @@ private:
   template <typename T> bool CheckVectorEqual(const std::vector<T>& a, const std::vector<T>& b);
   void SetStateToVector(const int num_state_all, Eigen::VectorXd& x_state); // 代入用関数．
   void GetStateFromVector(const int num_main_state_all, const Eigen::VectorXd& x_state);
-
 };
 #endif

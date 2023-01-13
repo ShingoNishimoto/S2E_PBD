@@ -48,11 +48,11 @@ static bool pcc_fixed = false;
 
 // template使っていい感じにしたい．
 // template <typename T> static void LogOutput(const )
-static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int size, const int max_size);
+static void LogOutput_(std::ofstream& ofs_, const Eigen::MatrixXd& M, const int size, const int max_size);
 
 PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellites_,
   const std::vector<PBD_Sat*> spacecrafts, PBD_GeoPotential* geop, const std::string ini_path) :mt(42),
-  step_time(sim_time_.GetStepSec()), ofs("result_new.csv"), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()),
+  step_time(sim_time_.GetStepSec()), num_of_gnss_satellites_(gnss_satellites_.GetNumOfSatellites()),
   geo_potential_(geop), num_main_state_all_(NUM_SINGLE_STATE), num_state_all_(NUM_STATE),
   process_noise_(ReadFilterNoiseParams(ini_path, "ProcessNoise")), apriori_noise_(ReadFilterNoiseParams(ini_path, "A-priori")),
   tau_a_(IniAccess(ini_path).ReadDouble("ProcessNoise", "tau_a")), tau_cdt_(IniAccess(ini_path).ReadDouble("ProcessNoise", "tau_a")),
@@ -163,35 +163,6 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   for (int i = 0; i < 3; ++i) x_est_target.velocity(i) += velocity_dist(mt);
 
   common_observed_status.assign(num_of_gnss_satellites_, false);
-
-  std::ofstream ofs_ini_txt("readme_new.txt");
-  ofs_ini_txt << "initial position dist: " << apriori_noise_.sigma_r << std::endl;
-  ofs_ini_txt << "initial velocity dist: " << apriori_noise_.sigma_v << std::endl;
-  ofs_ini_txt << "initial acceleration dist: " << apriori_noise_.sigma_aR << std::endl;
-  ofs_ini_txt << "initial clock dist: " << apriori_noise_.sigma_cdt << std::endl;
-  ofs_ini_txt << "initial ambiguity dist[cycle]: " << apriori_noise_.sigma_N << std::endl;
-  ofs_ini_txt << "pseudo dist: " << pseudo_sigma << std::endl;
-  ofs_ini_txt << "carrier dist: " << carrier_sigma << std::endl;
-  ofs_ini_txt << "clock dist: " << clock_sigma << std::endl;
-  ofs_ini_txt << "process noise of position: " << process_noise_.sigma_r << std::endl;
-  ofs_ini_txt << "process noise of velocity: " << process_noise_.sigma_v << std::endl;
-  ofs_ini_txt << "process noise of radial acceleration: " << process_noise_.sigma_aR << std::endl;
-  ofs_ini_txt << "process noise of tangential acceleration: " << process_noise_.sigma_aT << std::endl;
-  ofs_ini_txt << "process noise of north acceleration: " << process_noise_.sigma_aN << std::endl;
-  ofs_ini_txt << "process noise of clock: " << process_noise_.sigma_cdt << std::endl;
-  ofs_ini_txt << "process noise of ambiguity[cycle]: " << process_noise_.sigma_N << std::endl;
-  ofs_ini_txt << "time const. acceleration: " << tau_a_ << std::endl;
-  ofs_ini_txt << "time const. clock: " << tau_cdt_ << std::endl;
-  ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << std::endl; // FIXME
-  ofs_ini_txt << "num of status: " << NUM_STATE << std::endl;
-  ofs_ini_txt << "observe step time: " << observe_step_time << std::endl;
-  ofs_ini_txt << "log step time: " << log_step_time << std::endl;
-  libra::Vector<3> alignment_err_main = gnss_observations_.at(0).GetAntennaAlignmentError();
-  libra::Vector<3> alignment_err_target = gnss_observations_.at(1).GetAntennaAlignmentError();
-  for (uint8_t i = 0; i < 3; i++)
-    ofs_ini_txt << "main antenna alignment error[m]: " << alignment_err_main[i] << std::endl;
-  for (uint8_t i = 0; i < 3; i++)
-    ofs_ini_txt << "target antenna alignment error[m]: " << alignment_err_target[i] << std::endl;
 }
 
 PBD_dgps::~PBD_dgps(){}
@@ -216,6 +187,44 @@ PBD_dgps::KalmanFilterNoise PBD_dgps::ReadFilterNoiseParams(const std::string in
   filter_noise.sigma_N = filter_conf.ReadDouble(section, "sigma_N");
 
   return filter_noise;
+}
+
+void PBD_dgps::LogSetup(Logger& logger)
+{
+  // 推定用のやつはここで呼ぶ
+  x_est_target.pcc->LogSetup(logger);
+  logger.CopyFileToLogDir("../../data/ini/components/PCV.ini"); // ちょっと変やけどここで
+
+  std::string log_path = logger.GetLogPath();
+  ofs_ = std::ofstream(log_path + "result.csv");
+  std::ofstream ofs_ini_txt(log_path + "readme.txt");
+  ofs_ini_txt << "initial position dist: " << apriori_noise_.sigma_r << std::endl;
+  ofs_ini_txt << "initial velocity dist: " << apriori_noise_.sigma_v << std::endl;
+  ofs_ini_txt << "initial acceleration dist: " << apriori_noise_.sigma_aR << std::endl;
+  ofs_ini_txt << "initial clock dist: " << apriori_noise_.sigma_cdt << std::endl;
+  ofs_ini_txt << "initial ambiguity dist[cycle]: " << apriori_noise_.sigma_N << std::endl;
+  // ofs_ini_txt << "pseudo dist: " << pseudo_sigma << std::endl;
+  // ofs_ini_txt << "carrier dist: " << carrier_sigma << std::endl;
+  // ofs_ini_txt << "clock dist: " << clock_sigma << std::endl;
+  ofs_ini_txt << "process noise of position: " << process_noise_.sigma_r << std::endl;
+  ofs_ini_txt << "process noise of velocity: " << process_noise_.sigma_v << std::endl;
+  ofs_ini_txt << "process noise of radial acceleration: " << process_noise_.sigma_aR << std::endl;
+  ofs_ini_txt << "process noise of tangential acceleration: " << process_noise_.sigma_aT << std::endl;
+  ofs_ini_txt << "process noise of north acceleration: " << process_noise_.sigma_aN << std::endl;
+  ofs_ini_txt << "process noise of clock: " << process_noise_.sigma_cdt << std::endl;
+  ofs_ini_txt << "process noise of ambiguity[cycle]: " << process_noise_.sigma_N << std::endl;
+  ofs_ini_txt << "time const. acceleration: " << tau_a_ << std::endl;
+  ofs_ini_txt << "time const. clock: " << tau_cdt_ << std::endl;
+  ofs_ini_txt << "mask angle: " << gnss_observations_.at(0).mask_angle << std::endl; // FIXME
+  ofs_ini_txt << "num of status: " << NUM_STATE << std::endl;
+  ofs_ini_txt << "observe step time: " << observe_step_time << std::endl;
+  ofs_ini_txt << "log step time: " << log_step_time << std::endl;
+  libra::Vector<3> alignment_err_main = gnss_observations_.at(0).GetAntennaAlignmentError();
+  libra::Vector<3> alignment_err_target = gnss_observations_.at(1).GetAntennaAlignmentError();
+  for (uint8_t i = 0; i < 3; i++)
+    ofs_ini_txt << "main antenna alignment error[m]: " << alignment_err_main[i] << std::endl;
+  for (uint8_t i = 0; i < 3; i++)
+    ofs_ini_txt << "target antenna alignment error[m]: " << alignment_err_target[i] << std::endl;
 }
 
 // ここが他と同じ時刻系を使ってないのが原因な気がしてきた．FIXME！
@@ -311,24 +320,24 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     libra::Vector<3> sat_velocity_target = target_dynamics.GetOrbit().GetSatVelocity_i();
 
     // ECIでの真値（位置，クロックバイアス，速度）を残す．
-    for(int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_position_main[i] << ","; // r_m_true
-    ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetReceiver()->GetClockBias() << ","; // t_m_true
-    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(precision) << sat_velocity_main[i] << ","; // v_m_true
+    for(int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << sat_position_main[i] << ","; // r_m_true
+    ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetReceiver()->GetClockBias() << ","; // t_m_true
+    for(int i = 0;i < 3;++i) ofs_ << std::fixed << std::setprecision(precision) << sat_velocity_main[i] << ","; // v_m_true
 
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_position_target[i] << ","; // r_t_true
-    ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetReceiver()->GetClockBias() << ","; // t_t_true
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << sat_velocity_target[i] << ","; // v_t_true
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << sat_position_target[i] << ","; // r_t_true
+    ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetReceiver()->GetClockBias() << ","; // t_t_true
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << sat_velocity_target[i] << ","; // v_t_true
 
     // 推定結果，ECIでの値を残す．
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_main.position(i) << ","; // r_m_est
-    ofs << std::fixed << std::setprecision(precision) << x_est_main.clock(0) << ","; // t_m_est
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_main.velocity(i) << ","; // v_m_est
-    for(int i = 0;i < 3;++i) ofs << std::fixed << std::setprecision(precision) << x_est_main.acceleration(i) << ","; // a_m_est
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.position(i) << ","; // r_m_est
+    ofs_ << std::fixed << std::setprecision(precision) << x_est_main.clock(0) << ","; // t_m_est
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.velocity(i) << ","; // v_m_est
+    for(int i = 0;i < 3;++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.acceleration(i) << ","; // a_m_est
 
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_target.position(i) << ","; // r_t_est
-    ofs << std::fixed << std::setprecision(precision) << x_est_target.clock(0) << ","; //t_t_est
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_target.velocity(i) << ","; // v_t_est
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_target.acceleration(i) << ","; // a_t_est
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.position(i) << ","; // r_t_est
+    ofs_ << std::fixed << std::setprecision(precision) << x_est_target.clock(0) << ","; //t_t_est
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.velocity(i) << ","; // v_t_est
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.acceleration(i) << ","; // a_t_est
 
     Eigen::Vector3d sat_pos_eci_main{ };
     Eigen::Vector3d sat_vel_eci_main{ };
@@ -355,136 +364,136 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     res_vel_rtn_main = trans_eci_to_rtn_main * (x_est_main.velocity - sat_vel_eci_main);
     res_pos_rtn_target = trans_eci_to_rtn_target * (x_est_target.position - sat_pos_eci_target);
     res_vel_rtn_target = trans_eci_to_rtn_target * (x_est_target.velocity - sat_vel_eci_target);
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << res_pos_rtn_main(i) << ","; // res_pos_m_rtn
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << res_vel_rtn_main(i) << ","; // res_vel_m_rtn
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << res_pos_rtn_target(i) << ","; // res_pos_t_rtn
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << res_vel_rtn_target(i) << ","; // res_vel_t_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << res_pos_rtn_main(i) << ","; // res_pos_m_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << res_vel_rtn_main(i) << ","; // res_vel_m_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << res_pos_rtn_target(i) << ","; // res_pos_t_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << res_vel_rtn_target(i) << ","; // res_vel_t_rtn
 
-    for (int i = 0; i < NUM_GNSS_CH; ++i) ofs << std::fixed << std::setprecision(precision) << sat_info_.at(0).true_N(i) << ","; // N_true
+    for (int i = 0; i < NUM_GNSS_CH; ++i) ofs_ << std::fixed << std::setprecision(precision) << sat_info_.at(0).true_N(i) << ","; // N_true
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << x_est_main.ambiguity.N.at(i) << ","; // N_est
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(0)) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.ambiguity.N.at(i) << ","; // N_est
+      else ofs_ << 0 << ",";
     }
-    for (int i = 0; i < NUM_GNSS_CH; ++i) ofs << std::fixed << std::setprecision(precision) << sat_info_.at(1).true_N(i) << ","; // N_true
+    for (int i = 0; i < NUM_GNSS_CH; ++i) ofs_ << std::fixed << std::setprecision(precision) << sat_info_.at(1).true_N(i) << ","; // N_true
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << x_est_target.ambiguity.N.at(i) << ","; // N_est
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(1)) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.ambiguity.N.at(i) << ","; // N_est
+      else ofs_ << 0 << ",";
     }
 
     const int non_visible_num_main = NUM_GNSS_CH - visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
-    LogOutput_(ofs, P_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
+    LogOutput_(ofs_, P_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE + visible_gnss_nums_.at(1));
-    LogOutput_(ofs, P_target, NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE_ALL);
+    LogOutput_(ofs_, P_target, NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE_ALL);
 
     // RTNでのcovariance(r, vのみ)
     TransECI2RTN_P(P_main, trans_eci_to_rtn_main);
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_main(i, i) << ","; // P_rtn_main (position)
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_main(4 + i, 4 + i) << ","; // P_rtn_main (velocity)
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << P_main(i, i) << ","; // P_rtn_main (position)
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << P_main(4 + i, 4 + i) << ","; // P_rtn_main (velocity)
     TransECI2RTN_P(P_target, trans_eci_to_rtn_target);
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_target(i, i) << ","; // P_rtn_target (position)
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << P_target(4 + i, 4 + i) << ","; // P_rtn_target (velocity)
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << P_target(i, i) << ","; // P_rtn_target (position)
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << P_target(4 + i, 4 + i) << ","; // P_rtn_target (velocity)
 
     // record visible gnss sat number
     // そもそもここでログをとるのが適切ではない．
-    ofs << visible_gnss_nums_.at(0) << ",";
-    ofs << visible_gnss_nums_.at(1) << ",";
-    ofs << visible_gnss_nums_.at(2) << ",";
+    ofs_ << visible_gnss_nums_.at(0) << ",";
+    ofs_ << visible_gnss_nums_.at(1) << ",";
+    ofs_ << visible_gnss_nums_.at(2) << ",";
     // main observe gnss sat id
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i >= visible_gnss_nums_.at(0)) ofs << -1 << ",";
-      else ofs << gnss_observations_.at(0).info_.now_observed_gnss_sat_id.at(i) << ",";
+      if (i >= visible_gnss_nums_.at(0)) ofs_ << -1 << ",";
+      else ofs_ << gnss_observations_.at(0).info_.now_observed_gnss_sat_id.at(i) << ",";
     }
     // target observe gnss sat id
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i >= visible_gnss_nums_.at(1)) ofs << -1 << ",";
-      else ofs << gnss_observations_.at(1).info_.now_observed_gnss_sat_id.at(i) << ",";
+      if (i >= visible_gnss_nums_.at(1)) ofs_ << -1 << ",";
+      else ofs_ << gnss_observations_.at(1).info_.now_observed_gnss_sat_id.at(i) << ",";
     }
 
     // Q_
       Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
-    LogOutput_(ofs, Q_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
+    LogOutput_(ofs_, Q_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
     Eigen::MatrixXd Q_target = Q_.bottomRightCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE + visible_gnss_nums_.at(1));
-    LogOutput_(ofs, Q_target, NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE_ALL);
+    LogOutput_(ofs_, Q_target, NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE_ALL);
 
     // R_
     Eigen::MatrixXd R_gr_m = R_.topLeftCorner(visible_gnss_nums_.at(0), visible_gnss_nums_.at(0));
-    LogOutput_(ofs, R_gr_m, visible_gnss_nums_.at(0), NUM_GNSS_CH);
+    LogOutput_(ofs_, R_gr_m, visible_gnss_nums_.at(0), NUM_GNSS_CH);
     Eigen::MatrixXd R_gr_t = R_.block(visible_gnss_nums_.at(0), visible_gnss_nums_.at(0), visible_gnss_nums_.at(1), visible_gnss_nums_.at(1));
-    LogOutput_(ofs, R_gr_t, visible_gnss_nums_.at(1), NUM_GNSS_CH);
+    LogOutput_(ofs_, R_gr_t, visible_gnss_nums_.at(1), NUM_GNSS_CH);
     Eigen::MatrixXd R_sdcp = R_.bottomRightCorner(visible_gnss_nums_.at(2), visible_gnss_nums_.at(2));
-    LogOutput_(ofs, R_sdcp, visible_gnss_nums_.at(2), NUM_GNSS_CH);
+    LogOutput_(ofs_, R_sdcp, visible_gnss_nums_.at(2), NUM_GNSS_CH);
 
     // acc eci
     Eigen::Vector3d acc_m_i = trans_rtn_to_eci_main* x_est_main.acceleration; // [nm/s2]
     Eigen::Vector3d acc_t_i = trans_rtn_to_eci_target * x_est_target.acceleration; // [nm/s2]
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_m_i(i) << ","; // a_m_i
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_t_i(i) << ","; // a_t_i
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_main.acc_dist(i) << ","; // a_disturbance_m
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << x_est_target.acc_dist(i) << ","; // a_disturbance_t
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << acc_m_i(i) << ","; // a_m_i
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << acc_t_i(i) << ","; // a_t_i
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.acc_dist(i) << ","; // a_disturbance_m
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.acc_dist(i) << ","; // a_disturbance_t
     // acc rtn
     Eigen::Vector3d acc_dist_m_rtn = trans_eci_to_rtn_main* x_est_main.acc_dist; // [m/s2]
     Eigen::Vector3d acc_dist_t_rtn = trans_eci_to_rtn_target * x_est_target.acc_dist; // [m/s2]
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_dist_m_rtn(i) << ","; // a_disturbance_m_rtn
-    for (int i = 0; i < 3; ++i) ofs << std::fixed << std::setprecision(precision) << acc_dist_t_rtn(i) << ","; // a_disturbance_t_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << acc_dist_m_rtn(i) << ","; // a_disturbance_m_rtn
+    for (int i = 0; i < 3; ++i) ofs_ << std::fixed << std::setprecision(precision) << acc_dist_t_rtn(i) << ","; // a_disturbance_t_rtn
 
     // azimuth elevation
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssAzimuthDeg(i) << ","; // azimuth main
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(0)) ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssAzimuthDeg(i) << ","; // azimuth main
+      else ofs_ << 0 << ",";
     }
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssElevationDeg(i) << ","; // elevation main
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(0)) ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(0).GetGnssElevationDeg(i) << ","; // elevation main
+      else ofs_ << 0 << ",";
     }
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssAzimuthDeg(i) << ","; // azimuth target
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(1)) ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssAzimuthDeg(i) << ","; // azimuth target
+      else ofs_ << 0 << ",";
     }
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssElevationDeg(i) << ","; // elevation target
-      else ofs << 0 << ",";
+      if (i < visible_gnss_nums_.at(1)) ofs_ << std::fixed << std::setprecision(precision) << gnss_observations_.at(1).GetGnssElevationDeg(i) << ","; // elevation target
+      else ofs_ << 0 << ",";
     }
 
     // PCO
     const libra::Vector<3> pco_main = x_est_main.pcc->GetPCO_mm();
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_main[i] << ",";
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << pco_main[i] << ",";
     const libra::Vector<3> pco_target = x_est_target.pcc->GetPCO_mm();
-    for (int i = 0; i < 3; i++) ofs << std::fixed << std::setprecision(precision) << pco_target[i] << ",";
+    for (int i = 0; i < 3; i++) ofs_ << std::fixed << std::setprecision(precision) << pco_target[i] << ",";
 
     // is_fixedフラグ
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(0)) ofs << std::fixed << std::setprecision(precision) << x_est_main.ambiguity.is_fixed.at(i) << ",";
-      else ofs << false << ",";
+      if (i < visible_gnss_nums_.at(0)) ofs_ << std::fixed << std::setprecision(precision) << x_est_main.ambiguity.is_fixed.at(i) << ",";
+      else ofs_ << false << ",";
     }
     for (int i = 0; i < NUM_GNSS_CH; ++i)
     {
-      if (i < visible_gnss_nums_.at(1)) ofs << std::fixed << std::setprecision(precision) << x_est_target.ambiguity.is_fixed.at(i) << ","; // N_est
-      else ofs << false << ",";
+      if (i < visible_gnss_nums_.at(1)) ofs_ << std::fixed << std::setprecision(precision) << x_est_target.ambiguity.is_fixed.at(i) << ","; // N_est
+      else ofs_ << false << ",";
     }
 
-    ofs << std::endl;
+    ofs_ << std::endl;
   }
 
   return;
 }
 
 // もう少し汎用性の高い形にする．
-static void LogOutput_(std::ofstream& ofs, const Eigen::MatrixXd& M, const int size, const int max_size)
+static void LogOutput_(std::ofstream& ofs_, const Eigen::MatrixXd& M, const int size, const int max_size)
 {
   for (int i = 0; i < max_size; ++i)
   {
-    if (i < size) ofs << std::fixed << std::setprecision(precision) << M(i, i) << ",";
-    else ofs << 0 << ",";
+    if (i < size) ofs_ << std::fixed << std::setprecision(precision) << M(i, i) << ",";
+    else ofs_ << 0 << ",";
   }
 }
 
