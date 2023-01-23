@@ -1,4 +1,5 @@
 #include "InitGNSSReceiver.hpp"
+#include "../../Simulation/PBD/InitGNSSAntennaPCC.hpp"
 
 #include <string.h>
 #include <Dense>
@@ -22,7 +23,6 @@ typedef struct _gnssrecever_param {
   double clock_rn_stddev; // for random noise
 } GNSSReceiverParam;
 
-bool ReadAntexTable(std::string file_name, const double d_azi, const double d_ele, libra::Vector<3>& pco, std::vector<double>& pcv);
 
 GNSSReceiverParam ReadGNSSReceiverIni(const std::string fname, const GnssSatellites* gnss_satellites) {
   GNSSReceiverParam gnssreceiver_param;
@@ -49,7 +49,20 @@ GNSSReceiverParam ReadGNSSReceiverIni(const std::string fname, const GnssSatelli
   gnssreceiver_param.ch_max = gnssr_conf.ReadInt(GSection, "ch_max");
   gnssr_conf.ReadVector(GSection, "nr_stddev_eci", gnssreceiver_param.noise_std);
   gnssr_conf.ReadVector(GSection, "alignment_err_stddev_b", gnssreceiver_param.alignment_err_std);
-  gnssreceiver_param.antex_file_path = "../../../ExtLibraries/ANTEX/" + gnssr_conf.ReadString(GSection, "antex_file_name");
+  const std::string antex_file_name = gnssr_conf.ReadString(GSection, "antex_file_name");
+  // ここには必要ないかもしれない．FIXME
+  if (antex_file_name.substr(antex_file_name.length() - 3, 3) == "atx")
+  {
+    gnssreceiver_param.antex_file_path = "../../../ExtLibraries/ANTEX/" + antex_file_name;
+  }
+  else if (antex_file_name.substr(antex_file_name.length() - 3, 3) == "csv")
+  {
+    gnssreceiver_param.antex_file_path = antex_file_name; // こっちはパスを直接指定しておく．
+  }
+  else
+  {
+    std::cout << "AntexFileError!" << std::endl;
+  }
   gnssreceiver_param.pcv_d_azimuth = gnssr_conf.ReadDouble(GSection, "d_azi");
   gnssreceiver_param.pcv_d_elevation = gnssr_conf.ReadDouble(GSection, "d_ele");
   gnssreceiver_param.pseudo_stddev = gnssr_conf.ReadDouble(GSection, "pseudo_range_stddev");
@@ -64,61 +77,14 @@ PBD_GNSSReceiver InitGNSSReceiver(ClockGenerator* clock_gen, int id, const std::
 {
   GNSSReceiverParam gr_param = ReadGNSSReceiverIni(fname, gnss_satellites);
 
-  libra::Vector<3> pco_(0);
-  std::vector<double> pcv_;
+  PhaseCenterCorrection* pcc = InitPCC(gr_param.antex_file_path, gr_param.pcv_d_azimuth, gr_param.pcv_d_elevation);
 
-  if (!ReadAntexTable(gr_param.antex_file_path, gr_param.pcv_d_azimuth, gr_param.pcv_d_elevation, pco_, pcv_))
-  {
-    // hoge???
-    // モデルを球面PCO 0，PCV球面のモデルにする？
-  }
 
   PBD_GNSSReceiver gnss_r(gr_param.prescaler, clock_gen, id, gr_param.gnss_id, gr_param.ch_max, gr_param.antenna_model, gr_param.antenna_pos_b,
                       gr_param.q_b2c, gr_param.half_width, gr_param.noise_std,
-                      gr_param.alignment_err_std, pco_, pcv_,
+                      gr_param.alignment_err_std, pcc,
                       gr_param.pcv_d_azimuth, gr_param.pcv_d_elevation,
                       gr_param.pseudo_stddev, gr_param.carrier_stddev, gr_param.clock_rn_stddev,
                       dynamics, gnss_satellites, simtime);
   return gnss_r;
-}
-
-bool ReadAntexTable(std::string file_name, const double d_azi, const double d_ele, libra::Vector<3>& pco, std::vector<double>& pcv)
-{
-  std::ifstream antex_file(file_name);
-  if (!antex_file.is_open()) {
-    std::cerr << "file open error:Antex\n";
-    return false;
-  }
-
-  std::string line;
-  // PCO
-  std::getline(antex_file, line);
-  std::istringstream streamline(line);
-  // std::string description;
-  streamline >> pco[1] >> pco[0] >> pco[2]; // north, east, upなのでy, x, zの順で入れる．
-  // streamline >> pco[0] >> pco[1] >> pco[2];
-  // pco[1] *= -1; // x, y, zの順で代入した場合はyはwestなので符号を反転．
-
-  // NOAZI (skip)
-  std::getline(antex_file, line);
-
-  // PCV
-  int num_azimuth = (360 / d_azi + 1);
-  int num_elevation = (90 / d_ele + 1);
-  int num_values = num_azimuth * num_elevation;
-  for (int i = 0; i < num_azimuth; i++) {
-    std::string line;
-    std::getline(antex_file, line);
-    std::istringstream streamline(line);
-
-    double azimuth;
-    streamline >> azimuth; // azimuth angle
-    for (int j = 0; j < num_elevation; j++)
-    {
-      double pcv_element;
-      streamline >> pcv_element;
-      pcv.push_back(pcv_element);
-    }
-  }
-  return true;
 }

@@ -4,6 +4,7 @@
 #include <GeoPotential.h>
 #include "../../Library/VectorTool.hpp"
 #include <Interface/InitInput/IniAccess.h>
+#include "InitGNSSAntennaPCC.hpp"
 
 // clock model
 #define CLOCK_IS_WHITE_NOISE (1)
@@ -36,7 +37,7 @@
 // #define N_DEBUG
 // #define TIME_UPDATE_DEBUG
 
-#define PCC
+// #define PCC
 #define LAMBDA_DEBUG
 // #define WITHOUT_REL_SENSOR
 
@@ -69,8 +70,6 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
-  // const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
-  // x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
   // 一旦こっちは真値を持っていると仮定する．
   x_est_main.pcc = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCCPtr();
 
@@ -84,11 +83,22 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
-  libra::Vector<3> initial_pco(0); // initial_pco[2] = 120.0;
-  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
-  // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
+  const std::string pcv_ini_fname = "../../data/ini/components/PCV.ini";
+  IniAccess pcc_conf(pcv_ini_fname);
+  const std::string pcc_log_fname = pcc_conf.ReadString("PCV", "initial_pcc_file_path");
+  if (pcc_log_fname.empty())
+  {
+    libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
+    x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
+  }
+  else
+  {
+    x_est_target.pcc = InitPCC(pcc_log_fname, 5, 5);
+  }
 
-  pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
+  // x_est_target.pcc = spacecrafts.at(1)->pbd_components_->GetGNSSReceiver()->GetPCCPtr(); // 真値
+
+  pcc_estimate_ = PCCEstimation(x_est_target.pcc, pcv_ini_fname);
 
   x_est_.push_back(&x_est_main);
   x_est_.push_back(&x_est_target);
@@ -382,7 +392,6 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       else ofs_ << 0 << ",";
     }
 
-    const int non_visible_num_main = NUM_GNSS_CH - visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
     LogOutput_(ofs_, P_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE + visible_gnss_nums_.at(1));
@@ -1411,12 +1420,6 @@ void PBD_dgps::UpdateNumOfState(PBD_GnssObservation main_observation, PBD_GnssOb
   FindCommonObservedGnss(std::make_pair(0, 1));
   visible_gnss_nums_.push_back(common_observed_gnss_sat_id_.size());
 
-  // // for debug
-  // if (visible_gnss_nums_.at(2) < NUM_GNSS_CH)
-  // {
-  //   std::cout << visible_gnss_nums_.at(2) << std::endl;
-  // }
-
   num_observables_ = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + visible_gnss_nums_.at(2);
   num_main_state_all_ = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
   num_state_all_ = NUM_STATE + visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
@@ -1529,7 +1532,7 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
       // 残差確認
       hx_ = Eigen::VectorXd::Zero(num_observables_); // 観測モデル行列
       UpdateNumOfState(gnss_observations_.at(0), gnss_observations_.at(1));
-        Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
+      Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
       UpdateObservations(z_, hx_, H_, pre_Rv_); // 更新するのはSDCPだけでいいので無駄．
       const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
       R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．

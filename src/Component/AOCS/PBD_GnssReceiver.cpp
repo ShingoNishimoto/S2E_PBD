@@ -9,7 +9,7 @@
 PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_gen, const int id, const std::string gnss_id, const int ch_max,
     const AntennaModel antenna_model, const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
     const Vector<3> noise_std, const Vector<3> alignment_err_std,
-    libra::Vector<3> pco, std::vector<double> pcv,
+    PhaseCenterCorrection* pcc,
     const double azi_increment, const double ele_increment,
     const double pseudo_sigma, const double carrier_sigma, const double clock_sigma,
     const Dynamics* dynamics, const GnssSatellites* gnss_satellites, const SimTime* simtime):
@@ -19,7 +19,7 @@ PBD_GNSSReceiver::PBD_GNSSReceiver(const int prescaler, ClockGenerator* clock_ge
     nrs_antenna_b_y_(0.0, alignment_err_std[1], g_rand.MakeSeed()),
     nrs_antenna_b_z_(0.0, alignment_err_std[2], g_rand.MakeSeed()),
     pseudo_sigma_(pseudo_sigma), carrier_sigma_(carrier_sigma), clock_sigma_(clock_sigma),
-    pcc_(PhaseCenterCorrection(pco, pcv, azi_increment, ele_increment))
+    pcc_(*pcc)
   //  pcc_(PhaseCenterCorrection(pco, azi_increment, ele_increment)) // PCVなしver
 {
 #ifdef FIXED_ALIGNMENT
