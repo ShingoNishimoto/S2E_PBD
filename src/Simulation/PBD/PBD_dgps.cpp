@@ -38,7 +38,7 @@
 // #define TIME_UPDATE_DEBUG
 
 // #define PCC
-#define LAMBDA_DEBUG
+#define LAMBDA
 // #define WITHOUT_REL_SENSOR
 
 #undef cross
@@ -90,13 +90,13 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   {
     libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
     x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
+    // x_est_target.pcc = spacecrafts.at(1)->pbd_components_->GetGNSSReceiver()->GetPCCPtr(); // 真値
   }
   else
   {
     x_est_target.pcc = InitPCC(pcc_log_fname, 5, 5);
   }
 
-  // x_est_target.pcc = spacecrafts.at(1)->pbd_components_->GetGNSSReceiver()->GetPCCPtr(); // 真値
 
   pcc_estimate_ = PCCEstimation(x_est_target.pcc, pcv_ini_fname);
 
@@ -286,9 +286,9 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     KalmanFilter(); // a priori solution
 
     // IAR
-#ifdef LAMBDA_DEBUG
+#ifdef LAMBDA
     bool lambda_result = IntegerAmbiguityResolution(x_);
-#endif // LAMBDA_DEBUG
+#endif // LAMBDA
 
     // PCO, PCVの推定．
 #ifdef PCC
@@ -513,8 +513,10 @@ void PBD_dgps::InitializePhi(void)
   Phi_(3, 3) = 0.0;
   Phi_(NUM_SINGLE_STATE + 3, NUM_SINGLE_STATE + 3) = 0.0;
   // scaling matrixの部分
+#ifdef REDUCED_DYNAMIC
   Phi_.block(7, 7, 3, 3) = Eigen::Matrix3d::Zero();
   Phi_.block(NUM_SINGLE_STATE + 7, NUM_SINGLE_STATE + 7, 3, 3) = Eigen::Matrix3d::Zero();
+#endif // REDUCED_DYNAMIC
 }
 
 void PBD_dgps::TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn)
