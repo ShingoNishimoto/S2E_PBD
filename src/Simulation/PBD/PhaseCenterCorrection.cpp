@@ -173,3 +173,14 @@ void PhaseCenterCorrection::InitAngleIndexes(void)
     elevation_index_[elevation] = i;
   }
 }
+
+const int PhaseCenterCorrection::GetClosestGridIndex(const double azimuth_deg, const double elevation_deg)
+{
+  // 近接gridを四捨五入で計算
+  int azi_round =  std::round(azimuth_deg / azi_increment_) * azi_increment_;
+  int ele_round =  std::round(elevation_deg / ele_increment_) * ele_increment_;
+
+  const int num_ele = (int)(90 / ele_increment_) + 1;
+
+  return num_ele*azimuth_index_[azi_round] + elevation_index_[ele_round];
+}

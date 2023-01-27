@@ -97,8 +97,10 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
     x_est_target.pcc = InitPCC(pcc_log_fname, 5, 5);
   }
 
-
   pcc_estimate_ = PCCEstimation(x_est_target.pcc, pcv_ini_fname);
+  const int num_azi = (int)(360 / x_est_main.pcc->azi_increment_) + 1;
+  const int num_ele = (int)(90 / x_est_main.pcc->ele_increment_) + 1;
+  sdcp_residuals_.assign(num_azi*num_ele, 0.0); // 0埋め
 
   x_est_.push_back(&x_est_main);
   x_est_.push_back(&x_est_target);
@@ -207,6 +209,7 @@ void PBD_dgps::LogSetup(Logger& logger)
 
   std::string log_path = logger.GetLogPath();
   ofs_ = std::ofstream(log_path + "result.csv");
+  residual_log_path_ = log_path + "sdcp_residual.csv";
   std::ofstream ofs_ini_txt(log_path + "readme.txt");
   ofs_ini_txt << "initial position dist: " << apriori_noise_.sigma_r << std::endl;
   ofs_ini_txt << "initial velocity dist: " << apriori_noise_.sigma_v << std::endl;
@@ -318,6 +321,16 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     // ここで観測情報を次用に更新する．
     main_observation_.UpdateInfoAfterObserved();
     target_observation_.UpdateInfoAfterObserved();
+
+    // 観測残差をログに残す．
+    static int log_prescaler = 0;
+    const int residual_log_step = 10; // これで重すぎないかは様子見る．
+    log_prescaler++;
+    if (log_prescaler > residual_log_step)
+    {
+      SDCPResidualLogOutput();
+      log_prescaler = 0;
+    }
   }
 
   //log output
@@ -947,7 +960,10 @@ void PBD_dgps::KalmanFilter()
   const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
   R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
 
-  Eigen::VectorXd E_post = z_ - hx_; // ここじゃない？
+  Eigen::VectorXd E_post = z_ - hx_;
+  // この観測残差をgridごとにログに残す．
+  SetSDCPResiduals(E_post.bottomRows(visible_gnss_nums_.at(2)));
+
   // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose() - H*P_*H.transpose()); // residual based R_-adaptation <- これでするとめっちゃずれる．
   // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose()); // residual based R_-adaptation
   Eigen::MatrixXd Q_dash = alpha_ * Q_ + (1 - alpha_) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
@@ -1698,6 +1714,40 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
 
   // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
   return pcc_estimate_.Update(W, elapsed_time);
+}
+
+void PBD_dgps::SetSDCPResiduals(const Eigen::VectorXd& sdcp_res)
+{
+  for (const auto& gnss_id : common_observed_gnss_sat_id_)
+  {
+    // 共通可視衛星のidに対するmainのchを使って合わせる
+    const int main_ch = GetIndexOfStdVector(gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_id);
+    if (!x_est_main.ambiguity.is_fixed.at(main_ch)) continue;
+
+    const double azimuth = gnss_observations_.at(0).GetGnssAzimuthDeg(main_ch);
+    const double elevation = gnss_observations_.at(0).GetGnssElevationDeg(main_ch);
+    const int index = x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, elevation);
+    const int common_ch = GetIndexOfStdVector(common_observed_gnss_sat_id_, gnss_id);
+    sdcp_residuals_.at(index) = sdcp_res(common_ch); // 平均取るとかはせずに最新の値に更新する．
+  }
+}
+
+void PBD_dgps::SDCPResidualLogOutput(void)
+{
+  std::ofstream ofs_residual(residual_log_path_);
+  const int precision = 5;
+  const double ele_increment = x_est_.at(0)->pcc->ele_increment_;
+  const int num_ele = (int)(90 /  ele_increment) + 1;
+
+  for (int azimuth = 0; azimuth <= 360; azimuth+=x_est_.at(0)->pcc->azi_increment_)
+  {
+    for (int elevation = 90; elevation > 0; elevation-=ele_increment)
+    {
+      ofs_residual << std::fixed << std::setprecision(precision) << sdcp_residuals_.at(x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, elevation)) * 1000.0 << ","; // mmで記録
+    }
+    // 最後にカンマが入らないように調整
+    ofs_residual << std::fixed << std::setprecision(precision) << sdcp_residuals_.at(x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, 0)) * 1000.0 << std::endl; // 改行
+  }
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all_, const Eigen::VectorXd& x_state)

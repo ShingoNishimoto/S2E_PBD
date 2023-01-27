@@ -38,7 +38,7 @@ struct GnssObserveInfo
   std::vector<bool> now_observed_status{};
   // {index: gnss_sat_id} index means the position in the state variables
   std::vector<int> pre_observed_gnss_sat_id{};
-  std::vector<int> now_observed_gnss_sat_id{};
+  std::vector<int> now_observed_gnss_sat_id{}; // こいつらのgetter作ってもいいな．．．
   // {index: info}
   // 以下はモデルで計算するものなのでここではない．
   // vector<double> geometric_range{};

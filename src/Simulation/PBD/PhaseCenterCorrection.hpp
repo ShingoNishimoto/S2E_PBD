@@ -20,6 +20,7 @@ class PhaseCenterCorrection
   void LogSetup(Logger& logger);
   void PcvLogOutput(std::string out_fname);
   void PccLogOutput(std::string out_fname);
+  const int GetClosestGridIndex(const double azimuth_deg, const double elevation_deg);
 
   const double azi_increment_;
   const double ele_increment_;
