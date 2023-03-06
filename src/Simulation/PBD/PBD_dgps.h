@@ -70,11 +70,11 @@ private:
   // std::map<const int, int> common_index_dict;
 
   // Eigen::VectorXd x_true; // 状態量真値 for log
-  // シンプルにここが参照になっていないからか．
   std::vector<EstimatedVariables*> x_est_; // 状態量ベクトル
 
   std::vector<libra::Vector<3>> antenna_pos_b_;
   std::vector<PBD_GnssObservation> gnss_observations_{};
+  std::vector<double> sdcp_residuals_;
 
   struct GnssObserveModel
   {
@@ -142,6 +142,7 @@ private:
 
   // log用
   std::ofstream ofs_;
+  std::string residual_log_path_;
 
   int num_of_gnss_satellites_;
   int num_observables_ = 0;
@@ -190,6 +191,8 @@ private:
 
   // PCO, PCV関連
   const bool EstimateRelativePCC(const std::vector<double> sdcp_vec, const double elapsed_time);
+  void SetSDCPResiduals(const Eigen::VectorXd& sdcp_res);
+  void SDCPResidualLogOutput(void);
 
   // 便利関数関連
   void TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn);

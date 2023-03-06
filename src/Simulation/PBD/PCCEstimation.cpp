@@ -6,6 +6,7 @@
 #include "Interface/InitInput/IniAccess.h"
 
 // #define ITERATION
+// #define WITHOUT_HORIZON_UPDATE
 
 PCCEstimation::PCCEstimation(PhaseCenterCorrection* pcc, const std::string fname): pcc_(pcc)
 {
@@ -67,9 +68,14 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
     // ここで更新する．
     if (pco_estimate_.DpcoInitialEstimation(W, elapsed_time))
     {
+#ifdef WITHOUT_HORIZON_UPDATE
+      // 水平構成分は更新しないようにする．<- ただこれだと他成分の影響が入ってる気もする．
+      pco_estimate_.dpco_mm_[0] = 0.0;
+      pco_estimate_.dpco_mm_[1] = 0.0;
+#endif // WITHOUT_HORIZON_UPDATE
       pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
       // fixしたらpcvのフラグを変える．
-      if (pco_estimate_.GetPcoFixed()) pcv_estimate_.SetPcvFixed(false);
+      if (pco_estimate_.GetPcoFixed()) pcv_estimate_.SetPcvFixed(false); // estimation_finish_ = true;
       return true;
     }
   }

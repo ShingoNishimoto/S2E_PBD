@@ -13,7 +13,7 @@ public:
     const std::string gnss_id, const int ch_max, const AntennaModel antenna_model,
     const Vector<3> ant_pos_b, const Quaternion q_b2c, const double half_width,
     const Vector<3> noise_std, const Vector<3> alignment_err_std,
-    libra::Vector<3> pco, std::vector<double> pcv,
+    PhaseCenterCorrection* pcc,
     const double azi_increment, const double ele_increment,
     const double pseudo_sigma, const double carrier_sigma, const double clock_sigma,
     const Dynamics* dynamics, const GnssSatellites* gnss_satellites,

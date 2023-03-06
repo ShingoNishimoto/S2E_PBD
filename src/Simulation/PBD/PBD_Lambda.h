@@ -54,7 +54,7 @@ private:
 
   // Nのchと衛星の対応を持っておく必要がある．結局dgpsクラスでやったほうがいい？
   Eigen::MatrixXd InitializeCovariance(vector<Eigen::MatrixXd> P_N, const int num_single_state);
-  void RobustCholeskyDecomposition(Eigen::MatrixXd P);
+  const bool RobustCholeskyDecomposition(Eigen::MatrixXd P);
   void IntegerGaussTransformation(const int i, const int j);
   void Permute(const int k, const double delta);
   void Reduction(void);

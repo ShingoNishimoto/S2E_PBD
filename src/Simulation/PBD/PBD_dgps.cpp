@@ -4,6 +4,7 @@
 #include <GeoPotential.h>
 #include "../../Library/VectorTool.hpp"
 #include <Interface/InitInput/IniAccess.h>
+#include "InitGNSSAntennaPCC.hpp"
 
 // clock model
 #define CLOCK_IS_WHITE_NOISE (1)
@@ -36,8 +37,8 @@
 // #define N_DEBUG
 // #define TIME_UPDATE_DEBUG
 
-#define PCC
-#define LAMBDA_DEBUG
+// #define PCC
+#define LAMBDA
 // #define WITHOUT_REL_SENSOR
 
 #undef cross
@@ -69,8 +70,6 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_main.acceleration = Eigen::VectorXd::Zero(3);
   x_est_main.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_main);
-  // const libra::Vector<3> pco_true = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCO_mm();
-  // x_est_main.pcc = new PhaseCenterCorrection(pco_true, 5, 5, "main_pcv");
   // 一旦こっちは真値を持っていると仮定する．
   x_est_main.pcc = spacecrafts.at(0)->pbd_components_->GetGNSSReceiver()->GetPCCPtr();
 
@@ -84,11 +83,24 @@ PBD_dgps::PBD_dgps(const SimTime& sim_time_, const GnssSatellites& gnss_satellit
   x_est_target.acceleration = Eigen::VectorXd::Zero(3);
   x_est_target.acc_dist = Eigen::VectorXd::Zero(3);
   InitAmbiguity(x_est_target);
-  libra::Vector<3> initial_pco(0); // initial_pco[2] = 120.0;
-  x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
-  // x_est_target.pcc = new PhaseCenterCorrection(pco_true, 5, 5);
+  const std::string pcv_ini_fname = "../../data/ini/components/PCV.ini";
+  IniAccess pcc_conf(pcv_ini_fname);
+  const std::string pcc_log_fname = pcc_conf.ReadString("PCV", "initial_pcc_file_path");
+  if (pcc_log_fname.empty())
+  {
+    libra::Vector<3> initial_pco(0); initial_pco[2] = 120.0;
+    x_est_target.pcc = new PhaseCenterCorrection(initial_pco, 5, 5, "target_antenna");
+    // x_est_target.pcc = spacecrafts.at(1)->pbd_components_->GetGNSSReceiver()->GetPCCPtr(); // 真値
+  }
+  else
+  {
+    x_est_target.pcc = InitPCC(pcc_log_fname, 5, 5);
+  }
 
-  pcc_estimate_ = PCCEstimation(x_est_target.pcc, "../../data/ini/components/PCV.ini");
+  pcc_estimate_ = PCCEstimation(x_est_target.pcc, pcv_ini_fname);
+  const int num_azi = (int)(360 / x_est_main.pcc->azi_increment_) + 1;
+  const int num_ele = (int)(90 / x_est_main.pcc->ele_increment_) + 1;
+  sdcp_residuals_.assign(num_azi*num_ele, 0.0); // 0埋め
 
   x_est_.push_back(&x_est_main);
   x_est_.push_back(&x_est_target);
@@ -197,6 +209,7 @@ void PBD_dgps::LogSetup(Logger& logger)
 
   std::string log_path = logger.GetLogPath();
   ofs_ = std::ofstream(log_path + "result.csv");
+  residual_log_path_ = log_path + "sdcp_residual.csv";
   std::ofstream ofs_ini_txt(log_path + "readme.txt");
   ofs_ini_txt << "initial position dist: " << apriori_noise_.sigma_r << std::endl;
   ofs_ini_txt << "initial velocity dist: " << apriori_noise_.sigma_v << std::endl;
@@ -249,65 +262,76 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
     PBD_GnssObservation main_observation = main_observation_;
     PBD_GnssObservation target_observation = target_observation_;
     UpdateNumOfState(main_observation, target_observation);
-
-    int n_main = pre_visible_gnss_nums_.at(0);
-    Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
-    Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
-    int n_target = pre_visible_gnss_nums_.at(1);
-    Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
-    Eigen::MatrixXd Q_target = Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
-
-    UpdateBiasForm(0, x_est_main, P_main, Q_main);
-    UpdateBiasForm(1, x_est_target, P_target, Q_target);
-    const int new_size_all = P_main.rows() + P_target.rows();
-    P_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
-    Q_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
-    int n_main_new = visible_gnss_nums_.at(0);
-    P_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = P_main;
-    Q_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = Q_main;
-    int n_target_new = visible_gnss_nums_.at(1);
-    P_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = P_target;
-    Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = Q_target;
-
-    // 擬似距離をもとにclockを更新 <- ただ，初期の位置誤差の影響を受けてしまうのである程度収束してからにする．
-    // if (sqrt(P_main(0, 0)) < 0.1) x_est_main.clock(0) = DataEditing(0, ConvStdVecToEigenVec(gnss_observations_.at(0).observed_values_.L1_pseudo_range));
-    // if (sqrt(P_target(0, 0)) < 0.1) x_est_target.clock(0) = DataEditing(1, ConvStdVecToEigenVec(gnss_observations_.at(1).observed_values_.L1_pseudo_range));
-    // EKF
-    KalmanFilter(); // a priori solution
-
-    // IAR
-#ifdef LAMBDA_DEBUG
-    bool lambda_result = IntegerAmbiguityResolution(x_);
-#endif // LAMBDA_DEBUG
-
-    // PCO, PCVの推定．
-#ifdef PCC
-    // 全部fixしているときに限定する．<- よく考えると全部fixしている必要はないな，使用するデータをfixしているものに限定すればいい．
-    // if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(0) &&
-    //     std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(1))
+    if (num_observables_)
     {
-      // 推定完了したら実施しない．
-      if (!pcc_estimate_.GetEstimationFinish())
-      {
-        const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))), elapsed_time);
-        if (updated) KalmanFilter();
-      }
-      else
-      {
-        pcc_fixed = true;
-        // pcc_estimate_.SetEstimationFinish(false); // 相対位置センサなしに移す．// FIXME: コマンド的なもので制御できるようにしたい．
-      }
-    }
+      int n_main = pre_visible_gnss_nums_.at(0);
+      Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
+      Eigen::MatrixXd Q_main = Q_.topLeftCorner(NUM_SINGLE_STATE + n_main, NUM_SINGLE_STATE + n_main);
+      int n_target = pre_visible_gnss_nums_.at(1);
+      Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
+      Eigen::MatrixXd Q_target = Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target, NUM_SINGLE_STATE + n_target);
 
-  #endif // PCC
+      UpdateBiasForm(0, x_est_main, P_main, Q_main);
+      UpdateBiasForm(1, x_est_target, P_target, Q_target);
+      const int new_size_all = P_main.rows() + P_target.rows();
+      P_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
+      Q_ = Eigen::MatrixXd::Zero(new_size_all, new_size_all);
+      int n_main_new = visible_gnss_nums_.at(0);
+      P_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = P_main;
+      Q_.topLeftCorner(NUM_SINGLE_STATE + n_main_new, NUM_SINGLE_STATE + n_main_new) = Q_main;
+      int n_target_new = visible_gnss_nums_.at(1);
+      P_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = P_target;
+      Q_.bottomRightCorner(NUM_SINGLE_STATE + n_target_new, NUM_SINGLE_STATE + n_target_new) = Q_target;
+
+      // 擬似距離をもとにclockを更新 <- ただ，初期の位置誤差の影響を受けてしまうのである程度収束してからにする．
+      // if (sqrt(P_main(0, 0)) < 0.1) x_est_main.clock(0) = DataEditing(0, ConvStdVecToEigenVec(gnss_observations_.at(0).observed_values_.L1_pseudo_range));
+      // if (sqrt(P_target(0, 0)) < 0.1) x_est_target.clock(0) = DataEditing(1, ConvStdVecToEigenVec(gnss_observations_.at(1).observed_values_.L1_pseudo_range));
+      // EKF
+      KalmanFilter(); // a priori solution
+
+      // IAR
+#ifdef LAMBDA
+      bool lambda_result = IntegerAmbiguityResolution(x_);
+#endif // LAMBDA
+
+      // PCO, PCVの推定．
+#ifdef PCC
+      // 全部fixしているときに限定する．<- よく考えると全部fixしている必要はないな，使用するデータをfixしているものに限定すればいい．
+      // if (std::count(x_est_main.ambiguity.is_fixed.begin(), x_est_main.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(0) &&
+      //     std::count(x_est_target.ambiguity.is_fixed.begin(), x_est_target.ambiguity.is_fixed.end(), true) == visible_gnss_nums_.at(1))
+      {
+        // 推定完了したら実施しない．
+        if (!pcc_estimate_.GetEstimationFinish())
+        {
+          const bool updated = EstimateRelativePCC(ConvEigenVecToStdVec(z_.bottomRows(visible_gnss_nums_.at(2))), elapsed_time);
+          if (updated) KalmanFilter();
+        }
+        else
+        {
+          pcc_fixed = true;
+          // pcc_estimate_.SetEstimationFinish(false); // 相対位置センサなしに移す．// FIXME: コマンド的なもので制御できるようにしたい．
+        }
+      }
+#endif // PCC
 
 #ifndef TIME_UPDATE_DEBUG
-    InitializePhi();
+      InitializePhi();
 #endif // TIME_UPDATE_DEBUG
 
-    // ここで観測情報を次用に更新する．
-    main_observation_.UpdateInfoAfterObserved();
-    target_observation_.UpdateInfoAfterObserved();
+      // ここで観測情報を次用に更新する．
+      main_observation_.UpdateInfoAfterObserved();
+      target_observation_.UpdateInfoAfterObserved();
+
+      // 観測残差をログに残す．
+      static int log_prescaler = 0;
+      const int residual_log_step = 30; // これで重すぎないかは様子見る．
+      log_prescaler++;
+      if (log_prescaler > residual_log_step)
+      {
+        SDCPResidualLogOutput();
+        log_prescaler = 0;
+      }
+    }
   }
 
   //log output
@@ -382,7 +406,6 @@ void PBD_dgps::Update(const SimTime& sim_time_, const GnssSatellites& gnss_satel
       else ofs_ << 0 << ",";
     }
 
-    const int non_visible_num_main = NUM_GNSS_CH - visible_gnss_nums_.at(0);
     Eigen::MatrixXd P_main = P_.topLeftCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE + visible_gnss_nums_.at(0));
     LogOutput_(ofs_, P_main, NUM_SINGLE_STATE + visible_gnss_nums_.at(0), NUM_SINGLE_STATE_ALL);
     Eigen::MatrixXd P_target = P_.bottomRightCorner(NUM_SINGLE_STATE + visible_gnss_nums_.at(1), NUM_SINGLE_STATE + visible_gnss_nums_.at(1));
@@ -504,8 +527,10 @@ void PBD_dgps::InitializePhi(void)
   Phi_(3, 3) = 0.0;
   Phi_(NUM_SINGLE_STATE + 3, NUM_SINGLE_STATE + 3) = 0.0;
   // scaling matrixの部分
+#ifdef REDUCED_DYNAMIC
   Phi_.block(7, 7, 3, 3) = Eigen::Matrix3d::Zero();
   Phi_.block(NUM_SINGLE_STATE + 7, NUM_SINGLE_STATE + 7, 3, 3) = Eigen::Matrix3d::Zero();
+#endif // REDUCED_DYNAMIC
 }
 
 void PBD_dgps::TransECI2RTN_P(Eigen::MatrixXd& P, Eigen::Matrix3d trans_eci_to_rtn)
@@ -936,7 +961,10 @@ void PBD_dgps::KalmanFilter()
   const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
   R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
 
-  Eigen::VectorXd E_post = z_ - hx_; // ここじゃない？
+  Eigen::VectorXd E_post = z_ - hx_;
+  // この観測残差をgridごとにログに残す．
+  SetSDCPResiduals(E_post.bottomRows(visible_gnss_nums_.at(2)));
+
   // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose() - H*P_*H.transpose()); // residual based R_-adaptation <- これでするとめっちゃずれる．
   // R_ = alpha_ * R_ + (1 - alpha_) * (E_post*E_post.transpose()); // residual based R_-adaptation
   Eigen::MatrixXd Q_dash = alpha_ * Q_ + (1 - alpha_) * K * E_pre * (K * E_pre).transpose(); // Innovation based Q_-adaptation
@@ -969,7 +997,7 @@ void PBD_dgps::InitGnssObserveModels(GnssObserveModel& observed_model, const int
 
 Eigen::MatrixXd PBD_dgps::CalculateK(Eigen::MatrixXd H)
 {
-    // ここにfixしたNの部分が含まれているから不安定になる？
+  // ここにfixしたNの部分が含まれているから不安定になる？
   Eigen::MatrixXd hph = H_ * P_ * H_.transpose();
   Eigen::MatrixXd S = R_ + hph; // (observation_num, observation_num)
   Eigen::MatrixXd PHt = P_ * H.transpose();
@@ -1411,12 +1439,6 @@ void PBD_dgps::UpdateNumOfState(PBD_GnssObservation main_observation, PBD_GnssOb
   FindCommonObservedGnss(std::make_pair(0, 1));
   visible_gnss_nums_.push_back(common_observed_gnss_sat_id_.size());
 
-  // // for debug
-  // if (visible_gnss_nums_.at(2) < NUM_GNSS_CH)
-  // {
-  //   std::cout << visible_gnss_nums_.at(2) << std::endl;
-  // }
-
   num_observables_ = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1) + visible_gnss_nums_.at(2);
   num_main_state_all_ = NUM_SINGLE_STATE + visible_gnss_nums_.at(0);
   num_state_all_ = NUM_STATE + visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
@@ -1529,7 +1551,7 @@ const bool PBD_dgps::IntegerAmbiguityResolution(const Eigen::VectorXd& x_update)
       // 残差確認
       hx_ = Eigen::VectorXd::Zero(num_observables_); // 観測モデル行列
       UpdateNumOfState(gnss_observations_.at(0), gnss_observations_.at(1));
-        Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
+      Eigen::MatrixXd R_cpy = R_; // FIXME: ここは応急処置してるだけなので修正する！
       UpdateObservations(z_, hx_, H_, pre_Rv_); // 更新するのはSDCPだけでいいので無駄．
       const int graphic_num = visible_gnss_nums_.at(0) + visible_gnss_nums_.at(1);
       R_.topLeftCorner(graphic_num, graphic_num) = R_cpy.topLeftCorner(graphic_num, graphic_num); // 一旦これでごまかす．
@@ -1693,6 +1715,40 @@ const bool PBD_dgps::EstimateRelativePCC(const std::vector<double> sdcp_vec, con
 
   // W = Eigen::MatrixXd::Identity(R_ddcp.rows(), R_ddcp.cols());
   return pcc_estimate_.Update(W, elapsed_time);
+}
+
+void PBD_dgps::SetSDCPResiduals(const Eigen::VectorXd& sdcp_res)
+{
+  for (const auto& gnss_id : common_observed_gnss_sat_id_)
+  {
+    // 共通可視衛星のidに対するmainのchを使って合わせる
+    const int main_ch = GetIndexOfStdVector(gnss_observations_.at(0).info_.now_observed_gnss_sat_id, gnss_id);
+    if (!x_est_main.ambiguity.is_fixed.at(main_ch)) continue;
+
+    const double azimuth = gnss_observations_.at(0).GetGnssAzimuthDeg(main_ch);
+    const double elevation = gnss_observations_.at(0).GetGnssElevationDeg(main_ch);
+    const int index = x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, elevation);
+    const int common_ch = GetIndexOfStdVector(common_observed_gnss_sat_id_, gnss_id);
+    sdcp_residuals_.at(index) = sdcp_res(common_ch); // 平均取るとかはせずに最新の値に更新する．
+  }
+}
+
+void PBD_dgps::SDCPResidualLogOutput(void)
+{
+  std::ofstream ofs_residual(residual_log_path_);
+  const int precision = 5;
+  const double ele_increment = x_est_.at(0)->pcc->ele_increment_;
+  const int num_ele = (int)(90 /  ele_increment) + 1;
+
+  for (int azimuth = 0; azimuth <= 360; azimuth+=x_est_.at(0)->pcc->azi_increment_)
+  {
+    for (int elevation = 90; elevation > 0; elevation-=ele_increment)
+    {
+      ofs_residual << std::fixed << std::setprecision(precision) << sdcp_residuals_.at(x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, elevation)) * 1000.0 << ","; // mmで記録
+    }
+    // 最後にカンマが入らないように調整
+    ofs_residual << std::fixed << std::setprecision(precision) << sdcp_residuals_.at(x_est_.at(0)->pcc->GetClosestGridIndex(azimuth, 0)) * 1000.0 << std::endl; // 改行
+  }
 }
 
 void PBD_dgps::GetStateFromVector(const int num_main_state_all_, const Eigen::VectorXd& x_state)

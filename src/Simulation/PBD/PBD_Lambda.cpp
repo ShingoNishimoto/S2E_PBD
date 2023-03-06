@@ -58,7 +58,7 @@ bool PBD_Lambda::Solve(METHOD method)
   // Eigen::LDLT<Eigen::MatrixXd> LDLTOfP_ddN(P_ddN_);
   // L_ = LDLTOfP_ddN.matrixL();
   // D_ = LDLTOfP_ddN.vectorD(); // ここで負の値が出るのは数値誤差的にありえる．
-  RobustCholeskyDecomposition(P_ddN_);
+  if (!RobustCholeskyDecomposition(P_ddN_)) return false;
 
   Reduction();
 
@@ -164,7 +164,8 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
     if (main_ch >= n_common || target_ch >= n_common)
     {
       // Pの方を入れ替える操作をしないといけない．一旦なさそうなので無視する？
-      abort();
+      // abort();
+      std::cout << "lambda: discrepancy of visible satellite!" << std::endl;
     }
   }
   Eigen::MatrixXd P_dN = M_sd * P_N_all * M_sd.transpose();
@@ -224,7 +225,7 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
 }
 
 // LDLt decomposition ここではreorderingは入ってない．
-void PBD_Lambda::RobustCholeskyDecomposition(Eigen::MatrixXd P)
+const bool PBD_Lambda::RobustCholeskyDecomposition(Eigen::MatrixXd P)
 {
   const int n = P.rows();
 
@@ -239,10 +240,13 @@ void PBD_Lambda::RobustCholeskyDecomposition(Eigen::MatrixXd P)
     L_.block(i, 0, 1, i + 1) /= L_(i, i);
   }
 
-  if ((D_.array() < 1e-10).any())
+  if ((D_.array() < 1e-18).any())
   {
-    abort();
+    // abort();
+    std::cout << "D is not holomorphic!" << std::endl;
+    return false;
   }
+  return true;
 }
 
 void PBD_Lambda::IntegerGaussTransformation(const int i, const int k)

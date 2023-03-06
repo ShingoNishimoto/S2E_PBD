@@ -142,6 +142,7 @@ set(SOURCE_FILES
   src/Simulation/PBD/PCCEstimation.cpp
   src/Simulation/PBD/PCOEstimation.cpp
   src/Simulation/PBD/PCVEstimation.cpp
+  src/Simulation/PBD/InitGNSSAntennaPCC.cpp
   src/Component/AOCS/PBD_GNSSReceiver.cpp
   src/Component/AOCS/InitGnssReceiver.cpp
   src/Component/AOCS/RelativePositionSensor.cpp
