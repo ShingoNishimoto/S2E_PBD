@@ -75,7 +75,7 @@ const bool PCCEstimation::Update(const Eigen::MatrixXd& W, const double elapsed_
 #endif // WITHOUT_HORIZON_UPDATE
       pcc_->UpdatePCO(pco_estimate_.dpco_mm_);
       // fixしたらpcvのフラグを変える．
-      if (pco_estimate_.GetPcoFixed()) pcv_estimate_.SetPcvFixed(false);
+      if (pco_estimate_.GetPcoFixed()) pcv_estimate_.SetPcvFixed(false); // estimation_finish_ = true;
       return true;
     }
   }

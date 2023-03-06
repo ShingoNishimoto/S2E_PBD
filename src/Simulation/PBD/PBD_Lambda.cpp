@@ -164,7 +164,8 @@ Eigen::MatrixXd PBD_Lambda::InitializeCovariance(vector<Eigen::MatrixXd> P_N, co
     if (main_ch >= n_common || target_ch >= n_common)
     {
       // P‚Ì•û‚ğ“ü‚ê‘Ö‚¦‚é‘€ì‚ğ‚µ‚È‚¢‚Æ‚¢‚¯‚È‚¢Dˆê’U‚È‚³‚»‚¤‚È‚Ì‚Å–³‹‚·‚éH
-      abort();
+      // abort();
+      std::cout << "lambda: discrepancy of visible satellite!" << std::endl;
     }
   }
   Eigen::MatrixXd P_dN = M_sd * P_N_all * M_sd.transpose();
