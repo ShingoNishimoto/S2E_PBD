@@ -401,6 +401,7 @@ void PCVEstimation::ResidualInitialization(const std::string fname)
   InitializeVHW();
 }
 
+// FIXME: ここは来たまんまで埋めていくと偏りが出るので工夫が必要．時間とのトレードオフではあるが．
 void PCVEstimation::SetGnssInfo(const int ch, const int i, const int ref_j, const PBD_GnssObservation& gnss_observation, const double res_ddcp, PhaseCenterCorrection* pcc)
 {
   const double ref_azimuth = gnss_observation.GetGnssAzimuthDeg(ref_j);
